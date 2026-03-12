@@ -24,6 +24,7 @@
   data-hx-swap="{{ hx_swap | default('innerHTML') }}"
   data-table-name="{{ table_name | default('') }}"
   data-hx-indicator="{{ hx_indicator | default('#loading') }}"
+  data-extra-params="{{ (query_params if query_params is defined and query_params else {}) | tojson_attr }}"
   class="flex flex-col sm:flex-row items-center justify-between gap-4 py-4 border-t border-gray-200 dark:border-gray-700"
 >
   <!-- Page Size Selector -->

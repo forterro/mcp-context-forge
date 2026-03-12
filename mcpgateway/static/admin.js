@@ -151,6 +151,11 @@ function paginationData() {
             this.tableName = el.dataset.tableName || "";
             this.baseUrl = el.dataset.baseUrl || "";
             this.indicator = el.dataset.hxIndicator || "#loading";
+            try {
+                this.extraParams = JSON.parse(el.dataset.extraParams || "{}");
+            } catch (_) {
+                this.extraParams = {};
+            }
 
             // Honour namespaced URL param for page size (bookmarked / shared URLs).
             if (this.tableName) {
@@ -249,12 +254,20 @@ function paginationData() {
                 );
             }
 
-            // Apply extra query params registered by the template's per-instance
-            // <script> block (window._paginationQuerySetters[tableName]).
-            // Each pagination_controls.html include that has query_params renders
-            // a tojson-escaped setter function under its table_name key.
-            const setter = window._paginationQuerySetters[this.tableName];
-            if (setter) setter(url);
+            // Apply extra query params stored in data-extra-params (JSON, parsed
+            // during init()).  Values are tojson_attr-escaped by the template and
+            // read via JSON.parse(), so no inline JS injection is possible.
+            if (this.extraParams) {
+                for (const [key, value] of Object.entries(this.extraParams)) {
+                    if (
+                        key !== "include_inactive" &&
+                        value !== null &&
+                        value !== undefined
+                    ) {
+                        url.searchParams.set(key, value);
+                    }
+                }
+            }
 
             // Preserve team_id filter from the current URL.
             const currentUrlParams = new URLSearchParams(
