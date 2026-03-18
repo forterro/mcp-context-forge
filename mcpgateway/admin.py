@@ -5240,7 +5240,7 @@ async def admin_create_team(
             max_members = int(str(max_members_val).strip()) or None
 
         # OIDC sync fields
-        oidc_sync_enabled = form.get("oidc_sync_enabled") == "on"
+        oidc_sync_enabled = form.get("oidc_sync_enabled") == "true"
         oidc_group_id = str(form.get("oidc_group_id", "")).strip() or None
         oidc_sync_role = form.get("oidc_sync_role", "member")
         if oidc_sync_role not in ("owner", "developer", "member"):
@@ -5266,7 +5266,8 @@ async def admin_create_team(
 
         is_admin = isinstance(user, dict) and user.get("is_admin")
         await team_service.create_team(
-            name=team_data.name, description=team_data.description, created_by=user_email, visibility=team_data.visibility, max_members=team_data.max_members, skip_limits=bool(is_admin)
+            name=team_data.name, description=team_data.description, created_by=user_email, visibility=team_data.visibility, max_members=team_data.max_members, skip_limits=bool(is_admin),
+            oidc_sync_enabled=oidc_sync_enabled, oidc_group_id=oidc_group_id, oidc_sync_role=oidc_sync_role,
         )
 
         response = HTMLResponse(content="", status_code=201)
@@ -5825,7 +5826,7 @@ async def admin_update_team(
 
         # Update team
         user_email = getattr(user, "email", None) or str(user)
-        updated = await team_service.update_team(team_id=team_id, name=name, description=description, visibility=visibility, max_members=max_members, updated_by=user_email)
+        updated = await team_service.update_team(team_id=team_id, name=name, description=description, visibility=visibility, max_members=max_members, updated_by=user_email, oidc_sync_enabled=oidc_sync_enabled, oidc_group_id=oidc_group_id, oidc_sync_role=oidc_sync_role)
 
         if not updated:
             is_htmx = request.headers.get("HX-Request") == "true"
