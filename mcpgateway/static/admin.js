@@ -3576,9 +3576,9 @@ async function editTool(toolId) {
             tagsField.value = rawTags.join(", ");
         }
 
-        const teamId = new URL(window.location.href).searchParams.get(
-            "team_id",
-        );
+        // Use the entity's own team_id — never the URL team selector which may
+        // point to a different team.
+        const teamId = tool.team_id || null;
 
         if (teamId) {
             const hiddenInput = document.createElement("input");
@@ -4293,9 +4293,9 @@ async function editA2AAgent(agentId) {
             tagsField.value = rawTags.join(", ");
         }
 
-        const teamId = new URL(window.location.href).searchParams.get(
-            "team_id",
-        );
+        // Use the entity's own team_id — never the URL team selector which may
+        // point to a different team.
+        const teamId = agent.team_id || null;
 
         if (teamId) {
             const hiddenInput = document.createElement("input");
@@ -5254,11 +5254,10 @@ async function editResource(resourceId) {
         }
 
         if (visibility) {
-            // When public visibility is disabled and we're in a team-scoped view,
-            // coerce legacy-public records to team.
-            const _teamId = new URL(window.location.href).searchParams.get(
-                "team_id",
-            );
+            // When public visibility is disabled and the entity belongs to a
+            // team, coerce legacy-public records to team.
+            // Use the entity's own team_id — never the URL team selector.
+            const _teamId = resource.team_id || null;
             const effectiveVisibility =
                 window.ALLOW_PUBLIC_VISIBILITY === false &&
                 visibility === "public" &&
@@ -5760,11 +5759,10 @@ async function editPrompt(promptId) {
         }
 
         if (visibility) {
-            // When public visibility is disabled and we're in a team-scoped view,
-            // coerce legacy-public records to team.
-            const _teamId = new URL(window.location.href).searchParams.get(
-                "team_id",
-            );
+            // When public visibility is disabled and the entity belongs to a
+            // team, coerce legacy-public records to team.
+            // Use the entity's own team_id — never the URL team selector.
+            const _teamId = prompt.team_id || null;
             const effectiveVisibility =
                 window.ALLOW_PUBLIC_VISIBILITY === false &&
                 visibility === "public" &&
@@ -5784,10 +5782,8 @@ async function editPrompt(promptId) {
         const editForm = safeGetElement("edit-prompt-form");
         if (editForm) {
             editForm.action = `${window.ROOT_PATH}/admin/prompts/${encodeURIComponent(promptId)}/edit`;
-            // Add or update hidden team_id input if present in URL
-            const teamId = new URL(window.location.href).searchParams.get(
-                "team_id",
-            );
+            // Use the entity's own team_id — never the URL team selector.
+            const teamId = prompt.team_id || null;
             if (teamId) {
                 let teamInput = safeGetElement("edit-prompt-team-id");
                 if (!teamInput) {
@@ -6180,9 +6176,9 @@ async function editGateway(gatewayId) {
             tagsField.value = rawTags.join(", ");
         }
 
-        const teamId = new URL(window.location.href).searchParams.get(
-            "team_id",
-        );
+        // Use the entity's own team_id — never the URL team selector which may
+        // point to a different team.
+        const teamId = gateway.team_id || null;
 
         if (teamId) {
             const hiddenInput = document.createElement("input");
@@ -6211,8 +6207,8 @@ async function editGateway(gatewayId) {
         }
 
         if (visibility) {
-            // When public visibility is disabled and we're in a team-scoped view,
-            // coerce legacy-public records to team.
+            // When public visibility is disabled and the entity belongs to a
+            // team, coerce legacy-public records to team.
             const effectiveVisibility =
                 window.ALLOW_PUBLIC_VISIBILITY === false &&
                 visibility === "public" &&
@@ -7232,11 +7228,10 @@ async function editServer(serverId) {
 
         // Prepopulate visibility radio buttons based on the server data
         if (visibility) {
-            // When public visibility is disabled and we're in a team-scoped view,
-            // coerce legacy-public records to team.
-            const _teamId = new URL(window.location.href).searchParams.get(
-                "team_id",
-            );
+            // When public visibility is disabled and the entity belongs to a
+            // team, coerce legacy-public records to team.
+            // Use the entity's own team_id — never the URL team selector.
+            const _teamId = server.team_id || null;
             const effectiveVisibility =
                 window.ALLOW_PUBLIC_VISIBILITY === false &&
                 visibility === "public" &&
@@ -7252,9 +7247,9 @@ async function editServer(serverId) {
             }
         }
 
-        const teamId = new URL(window.location.href).searchParams.get(
-            "team_id",
-        );
+        // Use the entity's own team_id — never the URL team selector which may
+        // point to a different team.
+        const teamId = server.team_id || null;
 
         if (teamId) {
             const hiddenInput = document.createElement("input");
