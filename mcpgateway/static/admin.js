@@ -386,6 +386,14 @@ function toggleViewPublic(checkboxId, containerIds, teamId) {
 
 // Attach event listener after DOM is loaded or when modal opens
 document.addEventListener("DOMContentLoaded", function () {
+    // Populate team dropdowns in all create forms
+    populateTeamSelect("server-team-id");
+    populateTeamSelect("gateway-team-id");
+    populateTeamSelect("tool-team-id");
+    populateTeamSelect("resource-team-id");
+    populateTeamSelect("prompt-team-id");
+    populateTeamSelect("a2a-team-id");
+
     const TypeField = document.getElementById("edit-tool-type");
     if (TypeField) {
         TypeField.addEventListener("change", updateEditToolUrl);
@@ -1314,6 +1322,79 @@ function safeGetElement(id, suppressWarning = false) {
     } catch (error) {
         console.error(`Error getting element "${id}":`, error);
         return null;
+    }
+}
+
+/**
+ * Build a team <select> dropdown from window.USER_TEAMS data.
+ * Used by both create forms (inline HTML containers) and edit modals (dynamic).
+ *
+ * @param {string} selectId - The id attribute for the <select> element
+ * @param {string|null} selectedTeamId - Pre-selected team ID (null = first/personal)
+ * @param {boolean} allowNoTeam - Whether to include a "No Team" option
+ * @returns {HTMLElement} - The configured <select> element
+ */
+function buildTeamSelect(selectId, selectedTeamId, allowNoTeam = false) {
+    const select = document.createElement("select");
+    select.id = selectId;
+    select.name = "team_id";
+    select.className =
+        "mt-1 px-1.5 block w-full rounded-md border border-gray-300 dark:border-gray-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-900 dark:text-gray-300";
+
+    const teams = window.USER_TEAMS || [];
+
+    if (allowNoTeam) {
+        const noTeamOpt = document.createElement("option");
+        noTeamOpt.value = "";
+        noTeamOpt.textContent = "No Team (Personal)";
+        select.appendChild(noTeamOpt);
+    }
+
+    for (const team of teams) {
+        const opt = document.createElement("option");
+        opt.value = team.id;
+        opt.textContent = team.name + (team.is_personal ? " (personal)" : "");
+        if (team.id === selectedTeamId) {
+            opt.selected = true;
+        }
+        select.appendChild(opt);
+    }
+
+    // If no team matched and there are teams, select the URL team or first non-personal
+    if (!selectedTeamId && teams.length > 0) {
+        const urlTeamId = new URL(window.location.href).searchParams.get("team_id");
+        if (urlTeamId) {
+            select.value = urlTeamId;
+        }
+    }
+
+    return select;
+}
+
+/**
+ * Populate an existing team <select> element (used for create forms defined in HTML).
+ *
+ * @param {string} selectId - The id of the <select> element already in the DOM
+ */
+function populateTeamSelect(selectId) {
+    const select = document.getElementById(selectId);
+    if (!select) return;
+
+    const teams = window.USER_TEAMS || [];
+    // Clear existing options except first placeholder
+    select.innerHTML = "";
+
+    for (const team of teams) {
+        const opt = document.createElement("option");
+        opt.value = team.id;
+        opt.textContent = team.name + (team.is_personal ? " (personal)" : "");
+        select.appendChild(opt);
+    }
+
+    // Pre-select the team from URL param if present
+    const urlTeamId = new URL(window.location.href).searchParams.get("team_id");
+    if (urlTeamId) {
+        select.value = urlTeamId;
     }
 }
 
@@ -3576,17 +3657,11 @@ async function editTool(toolId) {
             tagsField.value = rawTags.join(", ");
         }
 
-        // Use the entity's own team_id — never the URL team selector which may
-        // point to a different team.
+        // Populate the team dropdown with the entity's current team selected.
         const teamId = tool.team_id || null;
-
-        if (teamId) {
-            const hiddenInput = document.createElement("input");
-            hiddenInput.type = "hidden";
-            hiddenInput.name = "team_id";
-            hiddenInput.value = teamId;
-            editForm.appendChild(hiddenInput);
-        }
+        populateTeamSelect("edit-tool-team-id");
+        const editToolTeamSelect = document.getElementById("edit-tool-team-id");
+        if (editToolTeamSelect && teamId) editToolTeamSelect.value = teamId;
 
         const visibility = tool.visibility
             ? tool.visibility.toLowerCase()
@@ -4293,17 +4368,11 @@ async function editA2AAgent(agentId) {
             tagsField.value = rawTags.join(", ");
         }
 
-        // Use the entity's own team_id — never the URL team selector which may
-        // point to a different team.
+        // Populate the team dropdown with the entity's current team selected.
         const teamId = agent.team_id || null;
-
-        if (teamId) {
-            const hiddenInput = document.createElement("input");
-            hiddenInput.type = "hidden";
-            hiddenInput.name = "team_id";
-            hiddenInput.value = teamId;
-            editForm.appendChild(hiddenInput);
-        }
+        populateTeamSelect("edit-a2a-team-id");
+        const editA2ATeamSelect = document.getElementById("edit-a2a-team-id");
+        if (editA2ATeamSelect && teamId) editA2ATeamSelect.value = teamId;
 
         // ✅ Prefill visibility radios (consistent with server)
         const visibility = agent.visibility
@@ -5238,6 +5307,12 @@ async function editResource(resourceId) {
             ? resource.visibility.toLowerCase()
             : null;
 
+        // Populate the team dropdown with the entity's current team selected.
+        const resourceTeamId = resource.team_id || null;
+        populateTeamSelect("edit-resource-team-id");
+        const editResourceTeamSelect = document.getElementById("edit-resource-team-id");
+        if (editResourceTeamSelect && resourceTeamId) editResourceTeamSelect.value = resourceTeamId;
+
         const publicRadio = safeGetElement("edit-resource-visibility-public");
         const teamRadio = safeGetElement("edit-resource-visibility-team");
         const privateRadio = safeGetElement("edit-resource-visibility-private");
@@ -5782,19 +5857,11 @@ async function editPrompt(promptId) {
         const editForm = safeGetElement("edit-prompt-form");
         if (editForm) {
             editForm.action = `${window.ROOT_PATH}/admin/prompts/${encodeURIComponent(promptId)}/edit`;
-            // Use the entity's own team_id — never the URL team selector.
+            // Populate the team dropdown with the entity's current team selected.
             const teamId = prompt.team_id || null;
-            if (teamId) {
-                let teamInput = safeGetElement("edit-prompt-team-id");
-                if (!teamInput) {
-                    teamInput = document.createElement("input");
-                    teamInput.type = "hidden";
-                    teamInput.name = "team_id";
-                    teamInput.id = "edit-prompt-team-id";
-                    editForm.appendChild(teamInput);
-                }
-                teamInput.value = teamId;
-            }
+            populateTeamSelect("edit-prompt-team-id");
+            const editPromptTeamSelect = document.getElementById("edit-prompt-team-id");
+            if (editPromptTeamSelect && teamId) editPromptTeamSelect.value = teamId;
         }
 
         const nameValidation = validateInputName(prompt.name, "prompt");
@@ -6176,17 +6243,11 @@ async function editGateway(gatewayId) {
             tagsField.value = rawTags.join(", ");
         }
 
-        // Use the entity's own team_id — never the URL team selector which may
-        // point to a different team.
+        // Populate the team dropdown with the entity's current team selected.
         const teamId = gateway.team_id || null;
-
-        if (teamId) {
-            const hiddenInput = document.createElement("input");
-            hiddenInput.type = "hidden";
-            hiddenInput.name = "team_id";
-            hiddenInput.value = teamId;
-            editForm.appendChild(hiddenInput);
-        }
+        populateTeamSelect("edit-gateway-team-id");
+        const editGatewayTeamSelect = document.getElementById("edit-gateway-team-id");
+        if (editGatewayTeamSelect && teamId) editGatewayTeamSelect.value = teamId;
 
         const visibility = gateway.visibility
             ? gateway.visibility.toLowerCase()
@@ -7247,17 +7308,11 @@ async function editServer(serverId) {
             }
         }
 
-        // Use the entity's own team_id — never the URL team selector which may
-        // point to a different team.
+        // Populate the team dropdown with the entity's current team selected.
         const teamId = server.team_id || null;
-
-        if (teamId) {
-            const hiddenInput = document.createElement("input");
-            hiddenInput.type = "hidden";
-            hiddenInput.name = "team_id";
-            hiddenInput.value = teamId;
-            editForm.appendChild(hiddenInput);
-        }
+        populateTeamSelect("edit-server-team-id");
+        const editServerTeamSelect = document.getElementById("edit-server-team-id");
+        if (editServerTeamSelect && teamId) editServerTeamSelect.value = teamId;
 
         // Initialize View Public toggle for Edit Server modal
         if (teamId) {
@@ -15898,10 +15953,7 @@ async function handleGatewayFormSubmit(e) {
 
         formData.set("visibility", formData.get("visibility"));
 
-        const teamId = new URL(window.location.href).searchParams.get(
-            "team_id",
-        );
-        teamId && formData.append("team_id", teamId);
+        // team_id comes from the <select name="team_id"> in the form.
 
         const response = await fetch(`${window.ROOT_PATH}/admin/gateways`, {
             method: "POST",
@@ -15984,10 +16036,7 @@ async function handleResourceFormSubmit(e) {
         const isInactiveCheckedBool = isInactiveChecked("resources");
         formData.append("is_inactive_checked", isInactiveCheckedBool);
         formData.set("visibility", formData.get("visibility"));
-        const teamId = new URL(window.location.href).searchParams.get(
-            "team_id",
-        );
-        teamId && formData.append("team_id", teamId);
+        // team_id comes from the <select name="team_id"> in the form.
         const response = await fetch(`${window.ROOT_PATH}/admin/resources`, {
             method: "POST",
             body: formData,
@@ -16054,10 +16103,7 @@ async function handlePromptFormSubmit(e) {
         const isInactiveCheckedBool = isInactiveChecked("prompts");
         formData.append("is_inactive_checked", isInactiveCheckedBool);
         formData.set("visibility", formData.get("visibility"));
-        const teamId = new URL(window.location.href).searchParams.get(
-            "team_id",
-        );
-        teamId && formData.append("team_id", teamId);
+        // team_id comes from the <select name="team_id"> in the form.
         const response = await fetch(`${window.ROOT_PATH}/admin/prompts`, {
             method: "POST",
             body: formData,
@@ -16098,11 +16144,7 @@ async function handleEditPromptFormSubmit(e) {
     const form = e.target;
 
     const formData = new FormData(form);
-    // Add team_id from URL if present (like handleEditToolFormSubmit)
-    const teamId = new URL(window.location.href).searchParams.get("team_id");
-    if (teamId) {
-        formData.set("team_id", teamId);
-    }
+    // team_id comes from the <select name="team_id"> in the edit form.
 
     try {
         // Validate inputs
@@ -16187,10 +16229,7 @@ async function handleServerFormSubmit(e) {
         formData.append("is_inactive_checked", isInactiveCheckedBool);
 
         formData.set("visibility", formData.get("visibility"));
-        const teamId = new URL(window.location.href).searchParams.get(
-            "team_id",
-        );
-        teamId && formData.append("team_id", teamId);
+        // team_id comes from the <select name="team_id"> in the form.
 
         // Build tools selection from Map (includes selections across pagination + search)
         const toolsContainer = document.getElementById("associatedTools");
@@ -16364,10 +16403,7 @@ async function handleA2AFormSubmit(e) {
         // ✅ Ensure visibility is captured from checked radio button
         // formData.set("visibility", visibility);
         formData.set("visibility", formData.get("visibility"));
-        const teamId = new URL(window.location.href).searchParams.get(
-            "team_id",
-        );
-        teamId && formData.append("team_id", teamId);
+        // team_id comes from the <select name="team_id"> in the form.
 
         // Submit to backend
         // specifically log agentType only
@@ -16466,10 +16502,7 @@ async function handleToolFormSubmit(event) {
         formData.append("is_inactive_checked", isInactiveCheckedBool);
 
         formData.set("visibility", formData.get("visibility"));
-        const teamId = new URL(window.location.href).searchParams.get(
-            "team_id",
-        );
-        teamId && formData.append("team_id", teamId);
+        // team_id comes from the <select name="team_id"> in the form.
 
         const response = await fetch(`${window.ROOT_PATH}/admin/tools`, {
             method: "POST",

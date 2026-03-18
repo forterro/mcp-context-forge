@@ -2060,6 +2060,8 @@ class PromptService(BaseService):
 
             if prompt_update.visibility is not None:
                 prompt.visibility = prompt_update.visibility
+            if prompt_update.team_id is not None:
+                prompt.team_id = prompt_update.team_id
 
             # Update tags if provided
             if prompt_update.tags is not None:
