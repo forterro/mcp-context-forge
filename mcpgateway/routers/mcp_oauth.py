@@ -37,6 +37,7 @@ from sqlalchemy.orm import Session
 
 from mcpgateway.config import settings
 from mcpgateway.db import Server as DbServer, get_db
+from mcpgateway.services.encryption_service import decrypt_oauth_config_for_runtime
 from mcpgateway.utils.create_jwt_token import create_jwt_token
 from mcpgateway.utils.log_sanitizer import sanitize_for_log
 
@@ -119,8 +120,8 @@ async def _discover_oidc_metadata(issuer: str) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
-def _get_server_oauth_config(db: Session, server_id: str) -> tuple[DbServer, Dict[str, Any]]:
-    """Load virtual server and validate it has MCP OAuth proxy config."""
+async def _get_server_oauth_config(db: Session, server_id: str) -> tuple[DbServer, Dict[str, Any]]:
+    """Load virtual server, validate and decrypt MCP OAuth proxy config."""
     server = db.get(DbServer, server_id)
     if not server or not server.enabled:
         raise HTTPException(status_code=404, detail="Server not found")
@@ -131,6 +132,9 @@ def _get_server_oauth_config(db: Session, server_id: str) -> tuple[DbServer, Dic
             status_code=404,
             detail="MCP OAuth proxy not configured for this server (missing client_id in oauth_config)",
         )
+
+    # Decrypt secrets (client_secret is encrypted at rest)
+    oauth_config = await decrypt_oauth_config_for_runtime(oauth_config)
 
     return server, oauth_config
 
@@ -202,7 +206,7 @@ async def register_client(
     Entra app ``client_id`` from the virtual server's ``oauth_config``.
     No actual registration happens.
     """
-    _, oauth_config = _get_server_oauth_config(db, server_id)
+    _, oauth_config = await _get_server_oauth_config(db, server_id)
 
     client_id = oauth_config["client_id"]
     response = DCRResponse(
@@ -240,7 +244,7 @@ async def authorize(
     if response_type != "code":
         raise HTTPException(status_code=400, detail="Only response_type=code is supported")
 
-    _, oauth_config = _get_server_oauth_config(db, server_id)
+    _, oauth_config = await _get_server_oauth_config(db, server_id)
 
     # Validate client_id matches configured value
     if client_id != oauth_config["client_id"]:
@@ -339,7 +343,7 @@ async def callback(
     if session.get("sid") != server_id:
         raise HTTPException(status_code=400, detail="Server ID mismatch")
 
-    _, oauth_config = _get_server_oauth_config(db, server_id)
+    _, oauth_config = await _get_server_oauth_config(db, server_id)
 
     # Discover IdP token endpoint
     auth_server = oauth_config.get("authorization_server") or oauth_config.get("authorization_servers", [None])[0]
