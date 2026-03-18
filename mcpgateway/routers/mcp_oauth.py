@@ -19,23 +19,24 @@ Flow:
 
 from __future__ import annotations
 
+import base64
 import hashlib
+import json
 import logging
 import secrets
 import time
 import urllib.parse
-from threading import Lock
 from typing import Any, Dict, List, Optional
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from cryptography.fernet import Fernet, InvalidToken
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from mcpgateway.config import settings
 from mcpgateway.db import Server as DbServer, get_db
-from mcpgateway.services.server_service import ServerService
 from mcpgateway.utils.create_jwt_token import create_jwt_token
 from mcpgateway.utils.log_sanitizer import sanitize_for_log
 
@@ -44,30 +45,51 @@ logger = logging.getLogger(__name__)
 mcp_oauth_router = APIRouter(prefix="/oauth", tags=["MCP OAuth"])
 
 # ---------------------------------------------------------------------------
-# In-memory session stores (TTL-based).
-# Production deployments should migrate to Redis.
+# Encrypted state — multi-pod safe (no shared storage needed).
+# Session and auth-code data are encrypted with Fernet using the
+# application's auth_secret.  The encrypted blob travels in the OAuth
+# ``state`` parameter or the authorization code itself.
 # ---------------------------------------------------------------------------
 
 _SESSION_TTL = 600  # 10 minutes
 _CODE_TTL = 300  # 5 minutes
 _OIDC_CACHE_TTL = 3600  # 1 hour
 
-_sessions_lock = Lock()
-_sessions: Dict[str, Dict[str, Any]] = {}  # internal_state -> session
-
-_codes_lock = Lock()
-_codes: Dict[str, Dict[str, Any]] = {}  # auth_code -> session
-
-_oidc_cache_lock = Lock()
-_oidc_cache: Dict[str, Dict[str, Any]] = {}  # issuer -> {metadata, ts}
+# OIDC metadata discovery cache (safe as in-memory — read-only / idempotent)
+_oidc_cache: Dict[str, Dict[str, Any]] = {}
 
 
-def _cleanup_expired(store: Dict[str, Dict[str, Any]], lock: Lock, ttl: int) -> None:
-    now = time.monotonic()
-    with lock:
-        expired = [k for k, v in store.items() if now - v.get("_ts", 0) > ttl]
-        for k in expired:
-            del store[k]
+def _get_fernet() -> Fernet:
+    """Derive a Fernet key from the application secret."""
+    secret = settings.jwt_secret_key.get_secret_value() if hasattr(settings.jwt_secret_key, "get_secret_value") else str(settings.jwt_secret_key)
+    # Fernet requires a 32-byte url-safe base64-encoded key
+    key_bytes = hashlib.sha256(secret.encode()).digest()
+    return Fernet(base64.urlsafe_b64encode(key_bytes))
+
+
+def _encrypt_state(data: Dict[str, Any]) -> str:
+    """Encrypt session data into a URL-safe token."""
+    data["_ts"] = time.time()  # wall-clock for cross-pod TTL
+    plaintext = json.dumps(data, separators=(",", ":")).encode()
+    return _get_fernet().encrypt(plaintext).decode("ascii")
+
+
+def _decrypt_state(token: str, ttl: int) -> Dict[str, Any]:
+    """Decrypt and validate an encrypted state token.
+
+    Raises HTTPException if invalid or expired.
+    """
+    try:
+        plaintext = _get_fernet().decrypt(token.encode("ascii"))
+        data = json.loads(plaintext)
+    except (InvalidToken, json.JSONDecodeError, Exception):
+        raise HTTPException(status_code=400, detail="Invalid or expired OAuth state")
+
+    ts = data.get("_ts", 0)
+    if time.time() - ts > ttl:
+        raise HTTPException(status_code=400, detail="OAuth session expired")
+
+    return data
 
 
 # ---------------------------------------------------------------------------
@@ -77,12 +99,9 @@ def _cleanup_expired(store: Dict[str, Dict[str, Any]], lock: Lock, ttl: int) -> 
 
 async def _discover_oidc_metadata(issuer: str) -> Dict[str, Any]:
     """Fetch and cache OIDC metadata from the authorization server."""
-    _cleanup_expired(_oidc_cache, _oidc_cache_lock, _OIDC_CACHE_TTL)
-
-    with _oidc_cache_lock:
-        cached = _oidc_cache.get(issuer)
-        if cached:
-            return cached["metadata"]
+    cached = _oidc_cache.get(issuer)
+    if cached and (time.time() - cached.get("_ts", 0)) < _OIDC_CACHE_TTL:
+        return cached["metadata"]
 
     oidc_url = f"{issuer.rstrip('/')}/.well-known/openid-configuration"
     async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
@@ -90,8 +109,7 @@ async def _discover_oidc_metadata(issuer: str) -> Dict[str, Any]:
         resp.raise_for_status()
         metadata = resp.json()
 
-    with _oidc_cache_lock:
-        _oidc_cache[issuer] = {"metadata": metadata, "_ts": time.monotonic()}
+    _oidc_cache[issuer] = {"metadata": metadata, "_ts": time.time()}
 
     return metadata
 
@@ -120,8 +138,6 @@ def _get_server_oauth_config(db: Session, server_id: str) -> tuple[DbServer, Dic
 def _s256(verifier: str) -> str:
     """Compute S256 code challenge from verifier."""
     digest = hashlib.sha256(verifier.encode("ascii")).digest()
-    import base64
-
     return base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
 
 
@@ -241,8 +257,7 @@ async def authorize(
         raise HTTPException(status_code=500, detail="IdP authorization_endpoint not found")
 
     # Generate internal state for CF ↔ IdP leg
-    internal_state = secrets.token_urlsafe(32)
-
+    # The state carries the encrypted session data — no server-side storage.
     # Generate PKCE for CF → IdP leg
     idp_code_verifier = secrets.token_urlsafe(64)
     idp_code_challenge = _s256(idp_code_verifier)
@@ -260,23 +275,20 @@ async def authorize(
     root_path = request.scope.get("root_path", "").rstrip("/")
     cf_callback_url = f"{base_url}{root_path}/oauth/callback/servers/{server_id}"
 
-    # Store session
+    # Encrypt session data into state
     session_data = {
-        "server_id": server_id,
-        "client_id": client_id,
-        "redirect_uri": redirect_uri,
-        "client_state": state,
-        "code_challenge": code_challenge,
-        "code_challenge_method": code_challenge_method,
-        "idp_code_verifier": idp_code_verifier,
-        "nonce": nonce,
-        "cf_callback_url": cf_callback_url,
-        "_ts": time.monotonic(),
+        "sid": server_id,
+        "cid": client_id,
+        "ru": redirect_uri,
+        "cs": state,
+        "cc": code_challenge,
+        "ccm": code_challenge_method,
+        "icv": idp_code_verifier,
+        "n": nonce,
+        "cb": cf_callback_url,
     }
 
-    _cleanup_expired(_sessions, _sessions_lock, _SESSION_TTL)
-    with _sessions_lock:
-        _sessions[internal_state] = session_data
+    internal_state = _encrypt_state(session_data)
 
     # Build IdP authorize URL
     scopes = oauth_config.get("scopes") or oauth_config.get("scopes_supported") or ["openid", "profile", "email"]
@@ -321,17 +333,10 @@ async def callback(
         logger.warning("MCP OAuth callback error from IdP: %s — %s", error, sanitize_for_log(error_description or ""))
         raise HTTPException(status_code=400, detail=f"IdP error: {error}")
 
-    # Look up session
-    with _sessions_lock:
-        session = _sessions.pop(state, None)
+    # Decrypt session from state (no server-side storage)
+    session = _decrypt_state(state, _SESSION_TTL)
 
-    if not session:
-        raise HTTPException(status_code=400, detail="Invalid or expired OAuth state")
-
-    if time.monotonic() - session["_ts"] > _SESSION_TTL:
-        raise HTTPException(status_code=400, detail="OAuth session expired")
-
-    if session["server_id"] != server_id:
+    if session.get("sid") != server_id:
         raise HTTPException(status_code=400, detail="Server ID mismatch")
 
     _, oauth_config = _get_server_oauth_config(db, server_id)
@@ -347,9 +352,9 @@ async def callback(
     token_payload = {
         "grant_type": "authorization_code",
         "code": code,
-        "redirect_uri": session["cf_callback_url"],
+        "redirect_uri": session["cb"],
         "client_id": oauth_config["client_id"],
-        "code_verifier": session["idp_code_verifier"],
+        "code_verifier": session["icv"],
     }
 
     # Add client_secret if configured (confidential client)
@@ -402,27 +407,22 @@ async def callback(
     if not cf_access_token:
         raise HTTPException(status_code=403, detail="User authentication failed")
 
-    # Generate CF authorization code
-    cf_code = secrets.token_urlsafe(48)
+    # Generate CF authorization code (encrypted — no server-side storage)
     code_data = {
-        "access_token": cf_access_token,
-        "redirect_uri": session["redirect_uri"],
-        "client_id": session["client_id"],
-        "code_challenge": session["code_challenge"],
-        "code_challenge_method": session["code_challenge_method"],
-        "_ts": time.monotonic(),
+        "at": cf_access_token,
+        "ru": session["ru"],
+        "cid": session["cid"],
+        "cc": session["cc"],
+        "ccm": session["ccm"],
     }
-
-    _cleanup_expired(_codes, _codes_lock, _CODE_TTL)
-    with _codes_lock:
-        _codes[cf_code] = code_data
+    cf_code = _encrypt_state(code_data)
 
     # Redirect to MCP client with authorization code
     redirect_params = {"code": cf_code}
-    if session.get("client_state"):
-        redirect_params["state"] = session["client_state"]
+    if session.get("cs"):
+        redirect_params["state"] = session["cs"]
 
-    redirect_url = f"{session['redirect_uri']}?{urllib.parse.urlencode(redirect_params)}"
+    redirect_url = f"{session['ru']}?{urllib.parse.urlencode(redirect_params)}"
     logger.info("MCP OAuth: redirecting to client callback for user %s", sanitize_for_log(user_info["email"]))
     return RedirectResponse(url=redirect_url, status_code=302)
 
@@ -460,44 +460,40 @@ async def token_exchange(
     if not code:
         return JSONResponse(content={"error": "invalid_request", "error_description": "Missing code"}, status_code=400)
 
-    # Look up authorization code
-    with _codes_lock:
-        code_data = _codes.pop(str(code), None)
-
-    if not code_data:
+    # Decrypt authorization code (no server-side storage)
+    try:
+        code_data = _decrypt_state(str(code), _CODE_TTL)
+    except HTTPException:
         return JSONResponse(content={"error": "invalid_grant", "error_description": "Invalid or expired code"}, status_code=400)
 
-    if time.monotonic() - code_data["_ts"] > _CODE_TTL:
-        return JSONResponse(content={"error": "invalid_grant", "error_description": "Code expired"}, status_code=400)
-
     # Validate redirect_uri matches
-    if redirect_uri and redirect_uri != code_data["redirect_uri"]:
+    if redirect_uri and redirect_uri != code_data.get("ru"):
         return JSONResponse(content={"error": "invalid_grant", "error_description": "redirect_uri mismatch"}, status_code=400)
 
     # Validate client_id matches
-    if client_id and client_id != code_data["client_id"]:
+    if client_id and client_id != code_data.get("cid"):
         return JSONResponse(content={"error": "invalid_grant", "error_description": "client_id mismatch"}, status_code=400)
 
     # Validate PKCE
-    if code_data.get("code_challenge"):
+    if code_data.get("cc"):
         if not code_verifier:
             return JSONResponse(
                 content={"error": "invalid_grant", "error_description": "code_verifier required"},
                 status_code=400,
             )
-        method = code_data.get("code_challenge_method", "S256")
+        method = code_data.get("ccm", "S256")
         if method == "S256":
             computed = _s256(str(code_verifier))
         else:
             computed = str(code_verifier)  # plain method
 
-        if computed != code_data["code_challenge"]:
+        if computed != code_data["cc"]:
             return JSONResponse(
                 content={"error": "invalid_grant", "error_description": "PKCE verification failed"},
                 status_code=400,
             )
 
-    access_token = code_data["access_token"]
+    access_token = code_data["at"]
     response = TokenResponse(
         access_token=access_token,
         expires_in=settings.token_expiry * 60 if hasattr(settings, "token_expiry") else 604800,
