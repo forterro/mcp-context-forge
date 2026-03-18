@@ -1555,6 +1555,7 @@ class Settings(BaseSettings):
     max_tool_retries: int = 3
     tool_rate_limit: int = 100  # requests per minute
     tool_concurrent_limit: int = 10
+    semantic_search_rate_limit: int = 30  # requests per minute for semantic search
 
     # MCP Session Pool - reduces per-request latency from ~20ms to ~1-2ms
     # Disabled by default for safety. Enable explicitly in production after testing.

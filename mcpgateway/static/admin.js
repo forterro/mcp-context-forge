@@ -7397,6 +7397,30 @@ async function editServer(serverId) {
             if (oauthTokenEndpointField) oauthTokenEndpointField.value = "";
         }
 
+        // Set Meta-Server configuration fields
+        const metaEnabledCheckbox = safeGetElement("edit-server-meta-enabled");
+        const metaConfigSection = safeGetElement("edit-server-meta-config-section");
+        const hideUnderlyingToolsCheckbox = safeGetElement("edit-server-hide-underlying-tools");
+        const isMeta = server.serverType === "meta" || server.server_type === "meta";
+
+        if (metaEnabledCheckbox) {
+            metaEnabledCheckbox.checked = isMeta;
+        }
+        if (metaConfigSection) {
+            if (isMeta) {
+                metaConfigSection.classList.remove("hidden");
+            } else {
+                metaConfigSection.classList.add("hidden");
+            }
+        }
+        if (hideUnderlyingToolsCheckbox) {
+            // Default to true if meta is enabled and field not explicitly set
+            const hideTools = server.hideUnderlyingTools !== undefined
+                ? server.hideUnderlyingTools
+                : (server.hide_underlying_tools !== undefined ? server.hide_underlying_tools : true);
+            hideUnderlyingToolsCheckbox.checked = isMeta ? hideTools : true;
+        }
+
         // Store server data for modal population
         window.currentEditingServer = server;
 
@@ -16249,6 +16273,17 @@ async function handleServerFormSubmit(e) {
             }
         }
 
+        // Handle Meta-Server configuration
+        const metaEnabledCheckbox = safeGetElement("server-meta-enabled");
+        if (metaEnabledCheckbox && metaEnabledCheckbox.checked) {
+            formData.set("server_type", "meta");
+            const hideToolsCheckbox = safeGetElement("server-hide-underlying-tools");
+            formData.set("hide_underlying_tools", hideToolsCheckbox && hideToolsCheckbox.checked ? "true" : "false");
+        } else {
+            formData.set("server_type", "standard");
+            formData.delete("hide_underlying_tools");
+        }
+
         const response = await fetch(`${window.ROOT_PATH}/admin/servers`, {
             method: "POST",
             body: formData,
@@ -16828,6 +16863,17 @@ async function handleEditServerFormSubmit(e) {
                 sel.forEach((uuid) => formData.append(fieldName, uuid));
             }
         });
+
+        // Handle Meta-Server configuration
+        const metaEnabledCheckbox = safeGetElement("edit-server-meta-enabled");
+        if (metaEnabledCheckbox && metaEnabledCheckbox.checked) {
+            formData.set("server_type", "meta");
+            const hideToolsCheckbox = safeGetElement("edit-server-hide-underlying-tools");
+            formData.set("hide_underlying_tools", hideToolsCheckbox && hideToolsCheckbox.checked ? "true" : "false");
+        } else {
+            formData.set("server_type", "standard");
+            formData.delete("hide_underlying_tools");
+        }
 
         // Submit via fetch
         const response = await fetch(form.action, {
