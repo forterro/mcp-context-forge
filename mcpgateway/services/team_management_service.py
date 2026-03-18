@@ -218,7 +218,12 @@ class TeamManagementService:
         Returns:
             str: The configured RBAC role name from settings.
         """
-        return settings.default_team_owner_role if membership_role == "owner" else settings.default_team_member_role
+        if membership_role == "owner":
+            return settings.default_team_owner_role
+        elif membership_role == "developer":
+            return settings.default_team_developer_role
+        else:
+            return settings.default_team_member_role
 
     @staticmethod
     def _fire_and_forget(coro: Any) -> None:
@@ -830,7 +835,7 @@ class TeamManagementService:
         """
         try:
             # Validate role
-            valid_roles = ["owner", "member"]
+            valid_roles = ["owner", "developer", "member"]
             if new_role not in valid_roles:
                 raise ValueError(f"Invalid role. Must be one of: {', '.join(valid_roles)}")
 
@@ -868,30 +873,19 @@ class TeamManagementService:
             # Handle RBAC role changes when team membership role changes
             if old_role != new_role:
                 try:
-                    # Get both role types
-                    team_member_role = await self.role_service.get_role_by_name(settings.default_team_member_role, scope="team")
-                    team_owner_role = await self.role_service.get_role_by_name(settings.default_team_owner_role, scope="team")
+                    # Revoke old RBAC role, assign new one
+                    old_rbac_name = self._get_rbac_role_name(old_role)
+                    new_rbac_name = self._get_rbac_role_name(new_role)
+                    old_rbac_role = await self.role_service.get_role_by_name(old_rbac_name, scope="team")
+                    new_rbac_role = await self.role_service.get_role_by_name(new_rbac_name, scope="team")
 
-                    # Handle role transitions
-                    if old_role == "member" and new_role == "owner":
-                        # member -> owner: revoke member role, assign owner role
-                        if team_member_role:
-                            await self.role_service.revoke_role_from_user(user_email=user_email, role_id=team_member_role.id, scope="team", scope_id=team_id)
-                        if team_owner_role:
-                            await self.role_service.assign_role_to_user(user_email=user_email, role_id=team_owner_role.id, scope="team", scope_id=team_id, granted_by=updated_by or user_email)
-                        logger.info(
-                            f"Transitioned RBAC role from {settings.default_team_member_role} to {settings.default_team_owner_role} for {SecurityValidator.sanitize_log_message(user_email)} in team {SecurityValidator.sanitize_log_message(team_id)}"
-                        )
-
-                    elif old_role == "owner" and new_role == "member":
-                        # owner -> member: revoke owner role, assign member role
-                        if team_owner_role:
-                            await self.role_service.revoke_role_from_user(user_email=user_email, role_id=team_owner_role.id, scope="team", scope_id=team_id)
-                        if team_member_role:
-                            await self.role_service.assign_role_to_user(user_email=user_email, role_id=team_member_role.id, scope="team", scope_id=team_id, granted_by=updated_by or user_email)
-                        logger.info(
-                            f"Transitioned RBAC role from {settings.default_team_owner_role} to {settings.default_team_member_role} for {SecurityValidator.sanitize_log_message(user_email)} in team {SecurityValidator.sanitize_log_message(team_id)}"
-                        )
+                    if old_rbac_role:
+                        await self.role_service.revoke_role_from_user(user_email=user_email, role_id=old_rbac_role.id, scope="team", scope_id=team_id)
+                    if new_rbac_role:
+                        await self.role_service.assign_role_to_user(user_email=user_email, role_id=new_rbac_role.id, scope="team", scope_id=team_id, granted_by=updated_by or user_email)
+                    logger.info(
+                        f"Transitioned RBAC role from {old_rbac_name} to {new_rbac_name} for {SecurityValidator.sanitize_log_message(user_email)} in team {SecurityValidator.sanitize_log_message(team_id)}"
+                    )
 
                 except Exception as role_error:
                     logger.warning(f"Failed to update RBAC roles for {SecurityValidator.sanitize_log_message(user_email)} in team {SecurityValidator.sanitize_log_message(team_id)}: {role_error}")

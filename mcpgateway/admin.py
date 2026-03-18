@@ -5239,6 +5239,13 @@ async def admin_create_team(
         if max_members_val and str(max_members_val).strip().isdigit():
             max_members = int(str(max_members_val).strip()) or None
 
+        # OIDC sync fields
+        oidc_sync_enabled = form.get("oidc_sync_enabled") == "on"
+        oidc_group_id = str(form.get("oidc_group_id", "")).strip() or None
+        oidc_sync_role = form.get("oidc_sync_role", "member")
+        if oidc_sync_role not in ("owner", "developer", "member"):
+            oidc_sync_role = "member"
+
         if not name:
             response = HTMLResponse(
                 content='<div class="text-red-500 p-3 bg-red-50 dark:bg-red-900/20 rounded-md">Team name is required</div>',
@@ -5669,6 +5676,36 @@ async def admin_get_team_edit(
                            class="mt-1 px-1.5 block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 dark:bg-gray-700 text-gray-900 dark:text-white">
                     <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Leave empty to keep current value</p>
                 </div>
+                <div class="border-t border-gray-200 dark:border-gray-700 pt-4 mt-4">
+                    <h4 class="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-3">OIDC Group Sync</h4>
+                    <div class="flex items-center mb-3">
+                        <input type="checkbox" name="oidc_sync_enabled" id="edit-oidc-sync-{team_id}" value="true"
+                               {"checked" if getattr(team, "oidc_sync_enabled", False) else ""}
+                               onchange="document.getElementById('edit-oidc-fields-{team_id}').style.display = this.checked ? 'block' : 'none'"
+                               class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 dark:border-gray-600 rounded">
+                        <label for="edit-oidc-sync-{team_id}" class="ml-2 text-sm text-gray-700 dark:text-gray-300">
+                            Sync members from an OIDC group
+                        </label>
+                    </div>
+                    <div id="edit-oidc-fields-{team_id}" style="display: {"block" if getattr(team, "oidc_sync_enabled", False) else "none"}">
+                        <div class="mb-3">
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">OIDC Group ID</label>
+                            <input type="text" name="oidc_group_id" value="{html.escape(getattr(team, 'oidc_group_id', '') or '', quote=True)}"
+                                   placeholder="e.g. 5993f5bb-566d-495d-8e80-918bc5e190d8"
+                                   class="mt-1 px-1.5 block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 dark:bg-gray-700 text-gray-900 dark:text-white">
+                            <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">The group UUID from your identity provider (e.g. Entra ID group Object ID)</p>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Default Role for Synced Members</label>
+                            <select name="oidc_sync_role"
+                                    class="mt-1 px-1.5 block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 dark:bg-gray-700 text-gray-900 dark:text-white">
+                                <option value="member" {"selected" if getattr(team, "oidc_sync_role", "member") == "member" else ""}>Viewer</option>
+                                <option value="developer" {"selected" if getattr(team, "oidc_sync_role", "member") == "developer" else ""}>Developer</option>
+                                <option value="owner" {"selected" if getattr(team, "oidc_sync_role", "member") == "owner" else ""}>Owner</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
                 <div class="flex justify-end space-x-3">
                     <button type="button" onclick="hideTeamEditModal()"
                             class="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700">
@@ -5729,6 +5766,14 @@ async def admin_update_team(
         max_members: Optional[int] = None
         if max_members_val and str(max_members_val).strip().isdigit():
             max_members = int(str(max_members_val).strip()) or None
+
+        # OIDC sync fields
+        oidc_sync_enabled = form.get("oidc_sync_enabled") == "true"
+        oidc_group_id = form.get("oidc_group_id")
+        oidc_group_id = oidc_group_id.strip() if isinstance(oidc_group_id, str) else None
+        oidc_sync_role = form.get("oidc_sync_role", "member")
+        if oidc_sync_role not in ("owner", "developer", "member"):
+            oidc_sync_role = "member"
 
         if not name:
             is_htmx = request.headers.get("HX-Request") == "true"

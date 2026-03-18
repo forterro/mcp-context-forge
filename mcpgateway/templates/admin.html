@@ -14682,6 +14682,53 @@ class="fixed z-50 inset-0 bg-gray-800 bg-opacity-75 flex items-center justify-ce
                     Optional, defaults to 50
                   </p>
                 </div>
+
+                <!-- OIDC Group Sync -->
+                <div class="border-t border-gray-200 dark:border-gray-700 pt-4">
+                  <h4 class="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-3">OIDC Group Sync</h4>
+                  <div class="flex items-center mb-3">
+                    <input
+                      type="checkbox"
+                      name="oidc_sync_enabled"
+                      id="create-oidc-sync"
+                      value="true"
+                      onchange="document.getElementById('create-oidc-fields').style.display = this.checked ? 'block' : 'none'"
+                      class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 dark:border-gray-600 rounded"
+                    />
+                    <label for="create-oidc-sync" class="ml-2 text-sm text-gray-700 dark:text-gray-300">
+                      Sync members from an OIDC group
+                    </label>
+                  </div>
+                  <div id="create-oidc-fields" style="display: none">
+                    <div class="mb-3">
+                      <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        OIDC Group ID
+                      </label>
+                      <input
+                        type="text"
+                        name="oidc_group_id"
+                        placeholder="e.g. 5993f5bb-566d-495d-8e80-918bc5e190d8"
+                        class="block w-full px-1.5 border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                      />
+                      <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                        The group UUID from your identity provider (e.g. Entra ID group Object ID)
+                      </p>
+                    </div>
+                    <div>
+                      <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Default Role for Synced Members
+                      </label>
+                      <select
+                        name="oidc_sync_role"
+                        class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                      >
+                        <option value="member" selected>Viewer</option>
+                        <option value="developer">Developer</option>
+                        <option value="owner">Owner</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
               </div>
 
               <div class="mt-6 flex justify-end space-x-3">
@@ -14871,8 +14918,8 @@ class="fixed z-50 inset-0 bg-gray-800 bg-opacity-75 flex items-center justify-ce
                   required
                   class="mt-1 px-1.5 block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 dark:bg-gray-700 dark:text-white"
                 >
-                  <option value="member">Member</option>
-                  <option value="admin">Admin</option>
+                  <option value="member">Viewer</option>
+                  <option value="developer">Developer</option>
                   <option value="owner">Owner</option>
                 </select>
               </div>
@@ -14965,8 +15012,8 @@ class="fixed z-50 inset-0 bg-gray-800 bg-opacity-75 flex items-center justify-ce
                   required
                   class="mt-1 px-1.5 block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 dark:bg-gray-700 dark:text-white"
                 >
-                  <option value="member">Member</option>
-                  <option value="admin">Admin</option>
+                  <option value="member">Viewer</option>
+                  <option value="developer">Developer</option>
                   <option value="owner">Owner</option>
                 </select>
               </div>

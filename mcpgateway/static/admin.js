@@ -1375,8 +1375,9 @@ function buildTeamSelect(selectId, selectedTeamId, allowNoTeam = false) {
  * Populate an existing team <select> element (used for create forms defined in HTML).
  *
  * @param {string} selectId - The id of the <select> element already in the DOM
+ * @param {string} [selectedTeamId] - Optional team ID to pre-select
  */
-function populateTeamSelect(selectId) {
+function populateTeamSelect(selectId, selectedTeamId) {
     const select = document.getElementById(selectId);
     if (!select) return;
 
@@ -1388,13 +1389,18 @@ function populateTeamSelect(selectId) {
         const opt = document.createElement("option");
         opt.value = team.id;
         opt.textContent = team.name + (team.is_personal ? " (personal)" : "");
+        if (selectedTeamId && team.id === selectedTeamId) {
+            opt.selected = true;
+        }
         select.appendChild(opt);
     }
 
-    // Pre-select the team from URL param if present
-    const urlTeamId = new URL(window.location.href).searchParams.get("team_id");
-    if (urlTeamId) {
-        select.value = urlTeamId;
+    // Pre-select the team from URL param if no explicit selection was made
+    if (!selectedTeamId) {
+        const urlTeamId = new URL(window.location.href).searchParams.get("team_id");
+        if (urlTeamId) {
+            select.value = urlTeamId;
+        }
     }
 }
 
@@ -3659,9 +3665,7 @@ async function editTool(toolId) {
 
         // Populate the team dropdown with the entity's current team selected.
         const teamId = tool.team_id || null;
-        populateTeamSelect("edit-tool-team-id");
-        const editToolTeamSelect = document.getElementById("edit-tool-team-id");
-        if (editToolTeamSelect && teamId) editToolTeamSelect.value = teamId;
+        populateTeamSelect("edit-tool-team-id", teamId);
 
         const visibility = tool.visibility
             ? tool.visibility.toLowerCase()
@@ -4370,9 +4374,7 @@ async function editA2AAgent(agentId) {
 
         // Populate the team dropdown with the entity's current team selected.
         const teamId = agent.team_id || null;
-        populateTeamSelect("edit-a2a-team-id");
-        const editA2ATeamSelect = document.getElementById("edit-a2a-team-id");
-        if (editA2ATeamSelect && teamId) editA2ATeamSelect.value = teamId;
+        populateTeamSelect("edit-a2a-team-id", teamId);
 
         // ✅ Prefill visibility radios (consistent with server)
         const visibility = agent.visibility
@@ -5309,9 +5311,7 @@ async function editResource(resourceId) {
 
         // Populate the team dropdown with the entity's current team selected.
         const resourceTeamId = resource.team_id || null;
-        populateTeamSelect("edit-resource-team-id");
-        const editResourceTeamSelect = document.getElementById("edit-resource-team-id");
-        if (editResourceTeamSelect && resourceTeamId) editResourceTeamSelect.value = resourceTeamId;
+        populateTeamSelect("edit-resource-team-id", resourceTeamId);
 
         const publicRadio = safeGetElement("edit-resource-visibility-public");
         const teamRadio = safeGetElement("edit-resource-visibility-team");
@@ -5859,9 +5859,7 @@ async function editPrompt(promptId) {
             editForm.action = `${window.ROOT_PATH}/admin/prompts/${encodeURIComponent(promptId)}/edit`;
             // Populate the team dropdown with the entity's current team selected.
             const teamId = prompt.team_id || null;
-            populateTeamSelect("edit-prompt-team-id");
-            const editPromptTeamSelect = document.getElementById("edit-prompt-team-id");
-            if (editPromptTeamSelect && teamId) editPromptTeamSelect.value = teamId;
+            populateTeamSelect("edit-prompt-team-id", teamId);
         }
 
         const nameValidation = validateInputName(prompt.name, "prompt");
@@ -6245,9 +6243,7 @@ async function editGateway(gatewayId) {
 
         // Populate the team dropdown with the entity's current team selected.
         const teamId = gateway.team_id || null;
-        populateTeamSelect("edit-gateway-team-id");
-        const editGatewayTeamSelect = document.getElementById("edit-gateway-team-id");
-        if (editGatewayTeamSelect && teamId) editGatewayTeamSelect.value = teamId;
+        populateTeamSelect("edit-gateway-team-id", teamId);
 
         const visibility = gateway.visibility
             ? gateway.visibility.toLowerCase()
@@ -7310,9 +7306,7 @@ async function editServer(serverId) {
 
         // Populate the team dropdown with the entity's current team selected.
         const teamId = server.team_id || null;
-        populateTeamSelect("edit-server-team-id");
-        const editServerTeamSelect = document.getElementById("edit-server-team-id");
-        if (editServerTeamSelect && teamId) editServerTeamSelect.value = teamId;
+        populateTeamSelect("edit-server-team-id", teamId);
 
         // Initialize View Public toggle for Edit Server modal
         if (teamId) {
@@ -23640,7 +23634,8 @@ async function performUserSearch(teamId, query, container, teamMemberData) {
                             name="role_${encodeURIComponent(user.email)}"
                             class="role-select text-sm px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-md dark:bg-gray-700 dark:text-white flex-shrink-0"
                         >
-                            <option value="member" ${selectedRole === "member" ? "selected" : ""}>Member</option>
+                            <option value="member" ${selectedRole === "member" ? "selected" : ""}>Viewer</option>
+                            <option value="developer" ${selectedRole === "developer" ? "selected" : ""}>Developer</option>
                             <option value="owner" ${selectedRole === "owner" ? "selected" : ""}>Owner</option>
                         </select>
                     </div>
