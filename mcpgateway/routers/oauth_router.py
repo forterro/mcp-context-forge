@@ -13,14 +13,16 @@ This module handles OAuth 2.0 Authorization Code flow endpoints including:
 """
 
 # Standard
+from datetime import datetime, timezone
 from html import escape
 import logging
-from typing import Annotated, Any, Dict
+from typing import Annotated, Any, Dict, List, Optional
 from urllib.parse import urlparse, urlunparse
 
 # Third-Party
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -28,7 +30,7 @@ from sqlalchemy.orm import Session
 from mcpgateway.auth import normalize_token_teams
 from mcpgateway.common.validators import SecurityValidator
 from mcpgateway.config import settings
-from mcpgateway.db import Gateway, get_db
+from mcpgateway.db import Gateway, OAuthToken, get_db
 from mcpgateway.middleware.rbac import get_current_user_with_permissions, require_permission
 from mcpgateway.middleware.token_scoping import token_scoping_middleware
 from mcpgateway.schemas import EmailUserResponse
@@ -987,3 +989,266 @@ async def delete_registered_client(client_id: str, current_user: EmailUserRespon
         logger.error(f"Failed to delete registered client {client_id}: {e}")
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Failed to delete registered client: {str(e)}")
+
+
+# ---------------------------------------------------------------------------
+# Programmatic OAuth Token Management API
+# ---------------------------------------------------------------------------
+
+
+class TokenInjectRequest(BaseModel):
+    """Request body for injecting OAuth tokens programmatically."""
+
+    access_token: str = Field(..., min_length=1, description="OAuth access token from the provider")
+    refresh_token: Optional[str] = Field(None, description="OAuth refresh token (optional)")
+    expires_in: int = Field(3600, ge=60, description="Token lifetime in seconds (default 3600)")
+    scopes: List[str] = Field(default_factory=list, description="OAuth scopes granted")
+    user_id: Optional[str] = Field(None, description="OAuth provider user ID (defaults to email)")
+
+
+class TokenInfoResponse(BaseModel):
+    """Response for token info queries."""
+
+    gateway_id: str
+    app_user_email: str
+    user_id: Optional[str] = None
+    token_type: Optional[str] = None
+    expires_at: Optional[str] = None
+    scopes: Optional[List[str]] = None
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+    is_expired: bool = False
+
+
+@oauth_router.post("/tokens/{gateway_id}")
+async def inject_oauth_token(
+    gateway_id: str,
+    body: TokenInjectRequest,
+    request: Request,
+    current_user: EmailUserResponse = Depends(get_current_user_with_permissions),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """Inject an OAuth token programmatically for a gateway.
+
+    Allows authenticated users to store an externally-obtained OAuth token
+    for a specific gateway, bypassing the browser-based authorization flow.
+    The token is encrypted at rest using the platform encryption service.
+
+    Args:
+        gateway_id: ID of the gateway to store the token for
+        body: Token injection request with access_token and optional fields
+        request: Incoming request with token-scoping context
+        current_user: The authenticated user
+        db: Database session
+
+    Returns:
+        Dict with success status and token expiration info
+
+    Raises:
+        HTTPException: If gateway not found, access denied, or storage fails
+    """
+    requester_email = _extract_user_email(current_user)
+    if not requester_email:
+        raise HTTPException(status_code=401, detail="User authentication required")
+
+    gateway = db.execute(select(Gateway).where(Gateway.id == gateway_id)).scalar_one_or_none()
+    if not gateway:
+        raise HTTPException(status_code=404, detail="Gateway not found")
+
+    await _enforce_gateway_access(gateway_id, gateway, current_user, db, request=request)
+
+    user_id = body.user_id or requester_email
+
+    try:
+        token_service = TokenStorageService(db)
+        token_record = await token_service.store_tokens(
+            gateway_id=gateway_id,
+            user_id=user_id,
+            app_user_email=requester_email,
+            access_token=body.access_token,
+            refresh_token=body.refresh_token,
+            expires_in=body.expires_in,
+            scopes=body.scopes,
+        )
+
+        logger.info(
+            f"Token injected via API for gateway {SecurityValidator.sanitize_log_message(gateway_id)}, "
+            f"user {SecurityValidator.sanitize_log_message(requester_email)}"
+        )
+
+        return {
+            "success": True,
+            "gateway_id": gateway_id,
+            "app_user_email": requester_email,
+            "expires_at": token_record.expires_at.isoformat() if token_record.expires_at else None,
+            "message": "OAuth token stored successfully",
+        }
+
+    except Exception as e:
+        logger.error(
+            f"Failed to inject token for gateway {SecurityValidator.sanitize_log_message(gateway_id)}: {e}"
+        )
+        raise HTTPException(status_code=500, detail=f"Failed to store OAuth token: {str(e)}")
+
+
+@oauth_router.get("/tokens/{gateway_id}")
+async def get_token_status(
+    gateway_id: str,
+    request: Request,
+    current_user: EmailUserResponse = Depends(get_current_user_with_permissions),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """Get OAuth token status for the authenticated user on a gateway.
+
+    Args:
+        gateway_id: ID of the gateway
+        request: Incoming request with token-scoping context
+        current_user: The authenticated user
+        db: Database session
+
+    Returns:
+        Token info or a message indicating no token is stored
+
+    Raises:
+        HTTPException: If gateway not found or access denied
+    """
+    requester_email = _extract_user_email(current_user)
+    if not requester_email:
+        raise HTTPException(status_code=401, detail="User authentication required")
+
+    gateway = db.execute(select(Gateway).where(Gateway.id == gateway_id)).scalar_one_or_none()
+    if not gateway:
+        raise HTTPException(status_code=404, detail="Gateway not found")
+
+    await _enforce_gateway_access(gateway_id, gateway, current_user, db, request=request)
+
+    try:
+        token_service = TokenStorageService(db)
+        info = await token_service.get_token_info(gateway_id, requester_email)
+
+        if not info:
+            return {"has_token": False, "gateway_id": gateway_id, "message": "No OAuth token stored for this gateway"}
+
+        return {
+            "has_token": True,
+            "gateway_id": gateway_id,
+            **info,
+        }
+
+    except Exception as e:
+        logger.error(
+            f"Failed to get token status for gateway {SecurityValidator.sanitize_log_message(gateway_id)}: {e}"
+        )
+        raise HTTPException(status_code=500, detail=f"Failed to get token status: {str(e)}")
+
+
+@oauth_router.delete("/tokens/{gateway_id}")
+async def revoke_oauth_token(
+    gateway_id: str,
+    request: Request,
+    current_user: EmailUserResponse = Depends(get_current_user_with_permissions),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """Revoke stored OAuth tokens for the authenticated user on a gateway.
+
+    Args:
+        gateway_id: ID of the gateway
+        request: Incoming request with token-scoping context
+        current_user: The authenticated user
+        db: Database session
+
+    Returns:
+        Dict with revocation status
+
+    Raises:
+        HTTPException: If gateway not found or access denied
+    """
+    requester_email = _extract_user_email(current_user)
+    if not requester_email:
+        raise HTTPException(status_code=401, detail="User authentication required")
+
+    gateway = db.execute(select(Gateway).where(Gateway.id == gateway_id)).scalar_one_or_none()
+    if not gateway:
+        raise HTTPException(status_code=404, detail="Gateway not found")
+
+    await _enforce_gateway_access(gateway_id, gateway, current_user, db, request=request)
+
+    try:
+        token_service = TokenStorageService(db)
+        revoked = await token_service.revoke_user_tokens(gateway_id, requester_email)
+
+        if revoked:
+            logger.info(
+                f"Token revoked via API for gateway {SecurityValidator.sanitize_log_message(gateway_id)}, "
+                f"user {SecurityValidator.sanitize_log_message(requester_email)}"
+            )
+            return {"success": True, "gateway_id": gateway_id, "message": "OAuth tokens revoked successfully"}
+
+        return {"success": False, "gateway_id": gateway_id, "message": "No OAuth tokens found for this gateway"}
+
+    except Exception as e:
+        logger.error(
+            f"Failed to revoke token for gateway {SecurityValidator.sanitize_log_message(gateway_id)}: {e}"
+        )
+        raise HTTPException(status_code=500, detail=f"Failed to revoke OAuth tokens: {str(e)}")
+
+
+@oauth_router.get("/tokens")
+async def list_user_tokens(
+    request: Request,
+    current_user: EmailUserResponse = Depends(get_current_user_with_permissions),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """List all gateways where the authenticated user has stored OAuth tokens.
+
+    Args:
+        request: Incoming request with token-scoping context
+        current_user: The authenticated user
+        db: Database session
+
+    Returns:
+        Dict with list of gateway token summaries
+
+    Raises:
+        HTTPException: If authentication fails
+    """
+    requester_email = _extract_user_email(current_user)
+    if not requester_email:
+        raise HTTPException(status_code=401, detail="User authentication required")
+
+    try:
+        token_records = db.execute(
+            select(OAuthToken).where(OAuthToken.app_user_email == requester_email)
+        ).scalars().all()
+
+        tokens = []
+        for record in token_records:
+            gateway = db.execute(select(Gateway).where(Gateway.id == record.gateway_id)).scalar_one_or_none()
+            gateway_name = gateway.name if gateway else record.gateway_id
+
+            is_expired = False
+            if record.expires_at:
+                expires_at = record.expires_at
+                if expires_at.tzinfo is None:
+                    expires_at = expires_at.replace(tzinfo=timezone.utc)
+                is_expired = datetime.now(timezone.utc) >= expires_at
+
+            tokens.append({
+                "gateway_id": record.gateway_id,
+                "gateway_name": gateway_name,
+                "expires_at": record.expires_at.isoformat() if record.expires_at else None,
+                "is_expired": is_expired,
+                "scopes": record.scopes,
+                "created_at": record.created_at.isoformat() if record.created_at else None,
+                "updated_at": record.updated_at.isoformat() if record.updated_at else None,
+            })
+
+        return {
+            "app_user_email": requester_email,
+            "total": len(tokens),
+            "tokens": tokens,
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to list user tokens: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to list tokens: {str(e)}")
