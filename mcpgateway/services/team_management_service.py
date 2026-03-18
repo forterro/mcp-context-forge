@@ -1094,57 +1094,41 @@ class TeamManagementService:
             logger.error(f"Failed to get teams for user {SecurityValidator.sanitize_log_message(user_email)}: {e}")
             return []
 
-    async def verify_team_for_user(self, user_email, team_id=None):
-        """
-        Retrieve a team ID for a user based on their membership and optionally a specific team ID.
+    async def verify_team_for_user(self, user_email: str, team_id: Optional[str] = None) -> Optional[str]:
+        """Verify and resolve a team ID for a user.
 
-        This function attempts to fetch all teams associated with the given user email.
-        If no `team_id` is provided, it returns the ID of the user's personal team (if any).
-        If a `team_id` is provided, it checks whether the user is a member of that team.
-        If the user is not a member of the specified team, it returns a JSONResponse with an error message.
+        If ``team_id`` is provided, validates that the user is a member of that
+        team and returns it.  If not provided, returns the user's personal team
+        ID.
 
         Args:
-            user_email (str): The email of the user whose teams are being queried.
-            team_id (str or None, optional): Specific team ID to check for membership. Defaults to None.
+            user_email: The email of the user whose teams are being queried.
+            team_id: Specific team ID to check for membership.
 
         Returns:
-            str or JSONResponse or None:
-                - If `team_id` is None, returns the ID of the user's personal team or None if not found.
-                - If `team_id` is provided and the user is a member of that team, returns `team_id`.
-                - If `team_id` is provided but the user is not a member of that team, returns a JSONResponse with error.
-                - Returns None if an error occurs and no `team_id` was initially provided.
+            The verified team ID (``str``) or ``None`` when no personal team
+            exists and no ``team_id`` was requested.
 
         Raises:
-            None explicitly, but any exceptions during the process are caught and logged.
-
-        Examples:
-            Verifies user team if team_id provided otherwise finds its personal id.
+            PermissionError: When *team_id* is provided but the user is not a
+                member of that team.
         """
         try:
-            # Get all teams the user belongs to in a single query
-            try:
-                query = self.db.query(EmailTeam).join(EmailTeamMember).filter(EmailTeamMember.user_email == user_email, EmailTeamMember.is_active.is_(True), EmailTeam.is_active.is_(True))
-                user_teams = query.all()
-                self.db.commit()  # Release transaction to avoid idle-in-transaction
-            except Exception as e:
-                self.db.rollback()
-                logger.error(f"Failed to get teams for user {SecurityValidator.sanitize_log_message(user_email)}: {e}")
-                return []
-
-            if not team_id:
-                # If no team_id is provided, try to get the personal team
-                personal_team = next((t for t in user_teams if getattr(t, "is_personal", False)), None)
-                team_id = personal_team.id if personal_team else None
-            else:
-                # Check if the provided team_id exists among the user's teams
-                is_team_present = any(team.id == team_id for team in user_teams)
-                if not is_team_present:
-                    return []
+            query = self.db.query(EmailTeam).join(EmailTeamMember).filter(EmailTeamMember.user_email == user_email, EmailTeamMember.is_active.is_(True), EmailTeam.is_active.is_(True))
+            user_teams = query.all()
+            self.db.commit()  # Release transaction to avoid idle-in-transaction
         except Exception as e:
             self.db.rollback()
-            logger.error(f"Failed to verify team for user {SecurityValidator.sanitize_log_message(user_email)}: {e}")
-            if not team_id:
-                team_id = None
+            logger.error(f"Failed to get teams for user {SecurityValidator.sanitize_log_message(user_email)}: {e}")
+            raise
+
+        if not team_id:
+            personal_team = next((t for t in user_teams if getattr(t, "is_personal", False)), None)
+            return personal_team.id if personal_team else None
+
+        is_team_present = any(team.id == team_id for team in user_teams)
+        if not is_team_present:
+            raise PermissionError(f"User is not a member of the requested team")
 
         return team_id
 
