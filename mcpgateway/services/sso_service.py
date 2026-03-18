@@ -522,7 +522,7 @@ class SSOService:
             team_id_value = mapping_value.get("team_id") or mapping_value.get("id")
             team_id = str(team_id_value).strip() if team_id_value is not None else ""
             role_value = str(mapping_value.get("role", "member")).strip().lower()
-            role = role_value if role_value in {"owner", "member"} else "member"
+            role = role_value if role_value in {"owner", "developer", "member"} else "member"
             return (team_id if team_id else None), role
 
         return None, "member"

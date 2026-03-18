@@ -1661,6 +1661,11 @@ class EmailTeam(Base):
     visibility: Mapped[str] = mapped_column(String(20), default="public", nullable=False)
     max_members: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
 
+    # OIDC group sync
+    oidc_sync_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, server_default="0")
+    oidc_group_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    oidc_sync_role: Mapped[str] = mapped_column(String(50), default="member", nullable=False, server_default="member")
+
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)

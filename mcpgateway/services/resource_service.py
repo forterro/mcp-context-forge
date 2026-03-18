@@ -2759,6 +2759,10 @@ class ResourceService(BaseService):
                 resource.uri_template = resource_update.uri_template
             if resource_update.visibility is not None:
                 resource.visibility = resource_update.visibility
+            if resource_update.team_id is not None:
+                resource.team_id = resource_update.team_id
+            if resource_update.owner_email is not None:
+                resource.owner_email = resource_update.owner_email
 
             # Update content if provided
             if resource_update.content is not None:

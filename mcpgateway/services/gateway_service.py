@@ -1912,6 +1912,15 @@ class GatewayService(BaseService):  # pylint: disable=too-many-instance-attribut
                         resource.visibility = gateway.visibility
                     for prompt in gateway.prompts:
                         prompt.visibility = gateway.visibility
+                if gateway_update.team_id is not None:
+                    gateway.team_id = gateway_update.team_id
+                    # Propagate team_id to all linked items
+                    for tool in gateway.tools:
+                        tool.team_id = gateway.team_id
+                    for resource in gateway.resources:
+                        resource.team_id = gateway.team_id
+                    for prompt in gateway.prompts:
+                        prompt.team_id = gateway.team_id
                 if gateway_update.passthrough_headers is not None:
                     if isinstance(gateway_update.passthrough_headers, list):
                         gateway.passthrough_headers = gateway_update.passthrough_headers
