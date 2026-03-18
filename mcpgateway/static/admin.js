@@ -7388,6 +7388,12 @@ async function editServer(serverId) {
         const oauthTokenEndpointField = safeGetElement(
             "edit-server-oauth-token-endpoint",
         );
+        const oauthClientIdField = safeGetElement(
+            "edit-server-oauth-client-id",
+        );
+        const oauthClientSecretField = safeGetElement(
+            "edit-server-oauth-client-secret",
+        );
 
         if (oauthEnabledCheckbox) {
             oauthEnabledCheckbox.checked = server.oauthEnabled || false;
@@ -7434,11 +7440,24 @@ async function editServer(serverId) {
                 oauthTokenEndpointField.value =
                     server.oauthConfig.token_endpoint || "";
             }
+
+            // Extract client_id
+            if (oauthClientIdField) {
+                oauthClientIdField.value =
+                    server.oauthConfig.client_id || "";
+            }
+
+            // Clear client_secret field (password field — never pre-filled with actual secret)
+            if (oauthClientSecretField) {
+                oauthClientSecretField.value = "";
+            }
         } else {
             // Clear OAuth config fields when no config exists
             if (oauthAuthServerField) oauthAuthServerField.value = "";
             if (oauthScopesField) oauthScopesField.value = "";
             if (oauthTokenEndpointField) oauthTokenEndpointField.value = "";
+            if (oauthClientIdField) oauthClientIdField.value = "";
+            if (oauthClientSecretField) oauthClientSecretField.value = "";
         }
 
         // Set Meta-Server configuration fields
