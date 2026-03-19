@@ -460,16 +460,18 @@ class ToolCreate(BaseModel):
     @field_validator("description")
     @classmethod
     def validate_description(cls, v: Optional[str]) -> Optional[str]:
-        """Ensure descriptions display safely, truncate if too long
+        """Ensure descriptions display safely, truncate if too long.
+
+        Shell-like patterns (&&, ||, $() are sanitized by inserting zero-width
+        spaces rather than rejecting the tool. Common text characters like
+        ``> ``, ``< ``, ``;``, ``|`` are allowed since descriptions are
+        display-only text, not executable content.
 
         Args:
             v (str): Value to validate
 
         Returns:
             str: Value if validated as safe and truncated if too long
-
-        Raises:
-            ValueError: When value is unsafe
 
         Examples:
             >>> from mcpgateway.schemas import ToolCreate
@@ -486,12 +488,16 @@ class ToolCreate(BaseModel):
         if v is None:
             return v
 
-        # Note: backticks (`) are allowed as they are commonly used in Markdown
-        # for inline code examples in tool descriptions
-        forbidden_patterns = ["&&", ";", "||", "$(", "|", "> ", "< "]
-        for pat in forbidden_patterns:
+        # Sanitize shell-like patterns from descriptions instead of rejecting.
+        # Descriptions are display-only text (shown to users/LLMs), not executed,
+        # so we strip dangerous patterns while preserving the tool.
+        # Characters like "> " and "< " are common in Markdown and template
+        # variables (e.g. <USER_ID>) used by external MCP servers like Microsoft Graph.
+        sanitize_patterns = {"&&": "&\u200B&", "$(": "$\u200B(", "||": "|\u200B|"}
+        for pat, replacement in sanitize_patterns.items():
             if pat in v:
-                raise ValueError(f"Description contains unsafe characters: '{pat}'")
+                logger.info(f"Sanitized shell pattern '{pat}' in tool description")
+                v = v.replace(pat, replacement)
 
         if len(v) > SecurityValidator.MAX_DESCRIPTION_LENGTH:
             # Truncate the description to the maximum allowed length
