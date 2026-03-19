@@ -43,12 +43,18 @@ from mcpgateway.meta_server.schemas import (
     AuthorizeGatewayResponse,
     DescribeToolResponse,
     ExecuteToolResponse,
+    GetPromptResponse,
     GetSimilarToolsResponse,
     GetToolCategoriesResponse,
+    ListPromptsResponse,
+    ListResourcesResponse,
     ListToolsResponse,
     META_TOOL_DEFINITIONS,
     MetaConfig,
     MetaToolScope,
+    PromptSummary,
+    ReadResourceResponse,
+    ResourceSummary,
     SearchToolsResponse,
     ServerType,
     ToolSummary,
@@ -204,6 +210,10 @@ class MetaServerService:
             "get_tool_categories": self._get_tool_categories,
             "get_similar_tools": self._get_similar_tools,
             "authorize_gateway": self._authorize_gateway,
+            "list_resources": self._list_resources,
+            "read_resource": self._read_resource,
+            "list_prompts": self._list_prompts,
+            "get_prompt": self._get_prompt,
         }
 
         handler = handlers.get(tool_name)
@@ -1083,6 +1093,289 @@ class MetaServerService:
                 gateway_name=gateway_name,
                 status="error",
                 message=f"Error checking gateway authorization: {str(e)}",
+            ).model_dump(by_alias=True)
+
+    # ------------------------------------------------------------------
+    # Resource and Prompt handlers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _normalize_tags(raw_tags: Any) -> List[str]:
+        """Normalize tags from DB format to plain strings.
+
+        Tags may be stored as dicts {'id': ..., 'label': ...} or plain strings.
+        """
+        if not raw_tags:
+            return []
+        result: List[str] = []
+        for tag in raw_tags:
+            if isinstance(tag, dict):
+                result.append(tag.get("id") or tag.get("label") or str(tag))
+            else:
+                result.append(str(tag))
+        return result
+
+    async def _list_resources(self, arguments: Dict[str, Any], **kwargs: Any) -> Dict[str, Any]:
+        """List MCP resources with pagination and optional filtering.
+
+        Args:
+            arguments: List parameters dict with keys:
+                - limit (int): Max results to return (default 50)
+                - offset (int): Pagination offset (default 0)
+                - tags (List[str]): Optional tag filter
+                - mime_type (str): Optional MIME type filter
+
+        Returns:
+            ListResourcesResponse as dict.
+        """
+        from mcpgateway.db import Resource  # pylint: disable=import-outside-toplevel
+
+        limit = arguments.get("limit", 50)
+        offset = arguments.get("offset", 0)
+        tags = arguments.get("tags", [])
+        mime_type = arguments.get("mime_type")
+
+        try:
+            db_gen = get_db()
+            db = next(db_gen)
+            try:
+                query = db.query(Resource).filter(Resource.enabled.is_(True))
+
+                if mime_type:
+                    query = query.filter(Resource.mime_type == mime_type)
+
+                all_resources = query.order_by(Resource.created_at.desc()).all()
+
+                # Apply tag filtering in Python (tags stored as JSON)
+                if tags:
+                    all_resources = [
+                        r for r in all_resources
+                        if r.tags and any(t in self._normalize_tags(r.tags) for t in tags)
+                    ]
+
+                total_count = len(all_resources)
+                paginated = all_resources[offset: offset + limit]
+                has_more = total_count > offset + limit
+
+                summaries = [
+                    ResourceSummary(
+                        uri=r.uri,
+                        name=r.name,
+                        description=r.description,
+                        mime_type=r.mime_type,
+                        size=r.size,
+                        tags=self._normalize_tags(r.tags),
+                    )
+                    for r in paginated
+                ]
+
+                return ListResourcesResponse(
+                    resources=summaries,
+                    total_count=total_count,
+                    has_more=has_more,
+                ).model_dump(by_alias=True)
+            finally:
+                try:
+                    next(db_gen)
+                except StopIteration:
+                    pass
+        except Exception as e:
+            logger.error(f"Error listing resources: {e}")
+            return ListResourcesResponse(
+                resources=[],
+                total_count=0,
+                has_more=False,
+            ).model_dump(by_alias=True)
+
+    async def _read_resource(self, arguments: Dict[str, Any], **kwargs: Any) -> Dict[str, Any]:
+        """Read the content of an MCP resource by URI.
+
+        Args:
+            arguments: Must contain uri (str) of the resource to read.
+
+        Returns:
+            ReadResourceResponse as dict with content.
+        """
+        from mcpgateway.db import Resource  # pylint: disable=import-outside-toplevel
+
+        uri = arguments.get("uri", "")
+        if not uri:
+            return ReadResourceResponse(
+                uri="",
+                name="",
+                text="Error: uri is required",
+            ).model_dump(by_alias=True)
+
+        try:
+            db_gen = get_db()
+            db = next(db_gen)
+            try:
+                resource = (
+                    db.query(Resource)
+                    .filter(Resource.uri == uri, Resource.enabled.is_(True))
+                    .first()
+                )
+
+                if resource is None:
+                    return ReadResourceResponse(
+                        uri=uri,
+                        name="",
+                        text=f"Resource not found: {uri}",
+                    ).model_dump(by_alias=True)
+
+                text_content = resource.text_content
+                if text_content is None and resource.binary_content is not None:
+                    text_content = "(binary content — not displayable as text)"
+
+                return ReadResourceResponse(
+                    uri=resource.uri,
+                    name=resource.name,
+                    mime_type=resource.mime_type,
+                    text=text_content,
+                    size=resource.size,
+                ).model_dump(by_alias=True)
+            finally:
+                try:
+                    next(db_gen)
+                except StopIteration:
+                    pass
+        except Exception as e:
+            logger.error(f"Error reading resource '{uri}': {e}")
+            return ReadResourceResponse(
+                uri=uri,
+                name="",
+                text=f"Error reading resource: {str(e)}",
+            ).model_dump(by_alias=True)
+
+    async def _list_prompts(self, arguments: Dict[str, Any], **kwargs: Any) -> Dict[str, Any]:
+        """List MCP prompts with pagination and optional filtering.
+
+        Args:
+            arguments: List parameters dict with keys:
+                - limit (int): Max results to return (default 50)
+                - offset (int): Pagination offset (default 0)
+                - tags (List[str]): Optional tag filter
+
+        Returns:
+            ListPromptsResponse as dict.
+        """
+        from mcpgateway.db import Prompt  # pylint: disable=import-outside-toplevel
+
+        limit = arguments.get("limit", 50)
+        offset = arguments.get("offset", 0)
+        tags = arguments.get("tags", [])
+
+        try:
+            db_gen = get_db()
+            db = next(db_gen)
+            try:
+                query = db.query(Prompt).filter(Prompt.enabled.is_(True))
+                all_prompts = query.order_by(Prompt.created_at.desc()).all()
+
+                # Apply tag filtering in Python (tags stored as JSON)
+                if tags:
+                    all_prompts = [
+                        p for p in all_prompts
+                        if p.tags and any(t in self._normalize_tags(p.tags) for t in tags)
+                    ]
+
+                total_count = len(all_prompts)
+                paginated = all_prompts[offset: offset + limit]
+                has_more = total_count > offset + limit
+
+                summaries = [
+                    PromptSummary(
+                        name=p.name,
+                        description=p.description,
+                        tags=self._normalize_tags(p.tags),
+                        argument_schema=p.argument_schema,
+                    )
+                    for p in paginated
+                ]
+
+                return ListPromptsResponse(
+                    prompts=summaries,
+                    total_count=total_count,
+                    has_more=has_more,
+                ).model_dump(by_alias=True)
+            finally:
+                try:
+                    next(db_gen)
+                except StopIteration:
+                    pass
+        except Exception as e:
+            logger.error(f"Error listing prompts: {e}")
+            return ListPromptsResponse(
+                prompts=[],
+                total_count=0,
+                has_more=False,
+            ).model_dump(by_alias=True)
+
+    async def _get_prompt(self, arguments: Dict[str, Any], **kwargs: Any) -> Dict[str, Any]:
+        """Get a prompt template by name with optional rendering.
+
+        Args:
+            arguments: Must contain name (str). Optional arguments (dict) for rendering.
+
+        Returns:
+            GetPromptResponse as dict with template and optionally rendered content.
+        """
+        from mcpgateway.db import Prompt  # pylint: disable=import-outside-toplevel
+
+        name = arguments.get("name", "")
+        prompt_args = arguments.get("arguments", {})
+
+        if not name:
+            return GetPromptResponse(
+                name="",
+                template="",
+                description="Error: name is required",
+            ).model_dump(by_alias=True)
+
+        try:
+            db_gen = get_db()
+            db = next(db_gen)
+            try:
+                prompt = (
+                    db.query(Prompt)
+                    .filter(Prompt.name == name, Prompt.enabled.is_(True))
+                    .first()
+                )
+
+                if prompt is None:
+                    return GetPromptResponse(
+                        name=name,
+                        template="",
+                        description=f"Prompt not found: {name}",
+                    ).model_dump(by_alias=True)
+
+                rendered = None
+                if prompt_args:
+                    try:
+                        prompt.validate_arguments(prompt_args)
+                        rendered = prompt.template.format(**prompt_args)
+                    except (ValueError, KeyError) as e:
+                        rendered = f"Error rendering prompt: {str(e)}"
+
+                return GetPromptResponse(
+                    name=prompt.name,
+                    description=prompt.description,
+                    template=prompt.template,
+                    rendered=rendered,
+                    argument_schema=prompt.argument_schema,
+                    tags=prompt.tags or [],
+                ).model_dump(by_alias=True)
+            finally:
+                try:
+                    next(db_gen)
+                except StopIteration:
+                    pass
+        except Exception as e:
+            logger.error(f"Error getting prompt '{name}': {e}")
+            return GetPromptResponse(
+                name=name,
+                template="",
+                description=f"Error getting prompt: {str(e)}",
             ).model_dump(by_alias=True)
 
 
