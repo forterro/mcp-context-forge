@@ -1099,6 +1099,22 @@ class MetaServerService:
     # Resource and Prompt handlers
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _normalize_tags(raw_tags: Any) -> List[str]:
+        """Normalize tags from DB format to plain strings.
+
+        Tags may be stored as dicts {'id': ..., 'label': ...} or plain strings.
+        """
+        if not raw_tags:
+            return []
+        result: List[str] = []
+        for tag in raw_tags:
+            if isinstance(tag, dict):
+                result.append(tag.get("id") or tag.get("label") or str(tag))
+            else:
+                result.append(str(tag))
+        return result
+
     async def _list_resources(self, arguments: Dict[str, Any], **kwargs: Any) -> Dict[str, Any]:
         """List MCP resources with pagination and optional filtering.
 
@@ -1134,7 +1150,7 @@ class MetaServerService:
                 if tags:
                     all_resources = [
                         r for r in all_resources
-                        if r.tags and any(t in r.tags for t in tags)
+                        if r.tags and any(t in self._normalize_tags(r.tags) for t in tags)
                     ]
 
                 total_count = len(all_resources)
@@ -1148,7 +1164,7 @@ class MetaServerService:
                         description=r.description,
                         mime_type=r.mime_type,
                         size=r.size,
-                        tags=r.tags or [],
+                        tags=self._normalize_tags(r.tags),
                     )
                     for r in paginated
                 ]
@@ -1260,7 +1276,7 @@ class MetaServerService:
                 if tags:
                     all_prompts = [
                         p for p in all_prompts
-                        if p.tags and any(t in p.tags for t in tags)
+                        if p.tags and any(t in self._normalize_tags(p.tags) for t in tags)
                     ]
 
                 total_count = len(all_prompts)
@@ -1271,7 +1287,7 @@ class MetaServerService:
                     PromptSummary(
                         name=p.name,
                         description=p.description,
-                        tags=p.tags or [],
+                        tags=self._normalize_tags(p.tags),
                         argument_schema=p.argument_schema,
                     )
                     for p in paginated
