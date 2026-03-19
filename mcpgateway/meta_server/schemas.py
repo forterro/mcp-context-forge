@@ -528,6 +528,210 @@ class GetSimilarToolsResponse(BaseModelWithConfigDict):
     total_found: int = Field(0, ge=0, description="Total number of similar tools found")
 
 
+class ListResourcesRequest(BaseModelWithConfigDict):
+    """Request schema for the list_resources meta-tool.
+
+    Attributes:
+        limit: Maximum number of resources to return.
+        offset: Number of resources to skip for pagination.
+        tags: Optional tag filter to narrow results.
+        mime_type: Optional MIME type filter (e.g. 'text/markdown').
+
+    Examples:
+        >>> req = ListResourcesRequest()
+        >>> req.limit
+        50
+    """
+
+    limit: int = Field(50, ge=1, le=1000, description="Maximum number of resources to return")
+    offset: int = Field(0, ge=0, description="Number of resources to skip for pagination")
+    tags: List[str] = Field(default_factory=list, description="Optional tag filter to narrow results")
+    mime_type: Optional[str] = Field(None, description="Optional MIME type filter (e.g. 'text/markdown')")
+
+
+class ResourceSummary(BaseModelWithConfigDict):
+    """Summary representation of a resource in meta-tool responses.
+
+    Attributes:
+        uri: Resource URI identifier.
+        name: Human-readable resource name.
+        description: Description of the resource.
+        mime_type: MIME type of the resource content.
+        size: Size of the resource content in bytes.
+        tags: Tags associated with the resource.
+
+    Examples:
+        >>> summary = ResourceSummary(uri="resource://example", name="Example")
+        >>> summary.uri
+        'resource://example'
+    """
+
+    uri: str = Field(..., description="Resource URI identifier")
+    name: str = Field(..., description="Human-readable resource name")
+    description: Optional[str] = Field(None, description="Description of the resource")
+    mime_type: Optional[str] = Field(None, description="MIME type of the resource content")
+    size: Optional[int] = Field(None, description="Size of the resource content in bytes")
+    tags: List[str] = Field(default_factory=list, description="Tags associated with the resource")
+
+
+class ListResourcesResponse(BaseModelWithConfigDict):
+    """Response schema for the list_resources meta-tool.
+
+    Attributes:
+        resources: List of resource summaries.
+        total_count: Total number of resources matching the filter.
+        has_more: Whether more results are available.
+
+    Examples:
+        >>> resp = ListResourcesResponse(resources=[], total_count=0, has_more=False)
+        >>> resp.total_count
+        0
+    """
+
+    resources: List[ResourceSummary] = Field(default_factory=list, description="List of resource summaries")
+    total_count: int = Field(0, ge=0, description="Total number of resources matching the filter")
+    has_more: bool = Field(False, description="Whether more results are available")
+
+
+class ReadResourceRequest(BaseModelWithConfigDict):
+    """Request schema for the read_resource meta-tool.
+
+    Attributes:
+        uri: The URI of the resource to read.
+
+    Examples:
+        >>> req = ReadResourceRequest(uri="resource://example/guide")
+        >>> req.uri
+        'resource://example/guide'
+    """
+
+    uri: str = Field(..., min_length=1, max_length=767, description="The URI of the resource to read")
+
+
+class ReadResourceResponse(BaseModelWithConfigDict):
+    """Response schema for the read_resource meta-tool.
+
+    Attributes:
+        uri: Resource URI.
+        name: Resource name.
+        mime_type: MIME type of the content.
+        text: Text content of the resource (if text-based).
+        size: Size of the content in bytes.
+
+    Examples:
+        >>> resp = ReadResourceResponse(uri="resource://ex", name="ex", text="Hello")
+        >>> resp.text
+        'Hello'
+    """
+
+    uri: str = Field(..., description="Resource URI")
+    name: str = Field(..., description="Resource name")
+    mime_type: Optional[str] = Field(None, description="MIME type of the content")
+    text: Optional[str] = Field(None, description="Text content of the resource")
+    size: Optional[int] = Field(None, description="Size of the content in bytes")
+
+
+class ListPromptsRequest(BaseModelWithConfigDict):
+    """Request schema for the list_prompts meta-tool.
+
+    Attributes:
+        limit: Maximum number of prompts to return.
+        offset: Number of prompts to skip for pagination.
+        tags: Optional tag filter to narrow results.
+
+    Examples:
+        >>> req = ListPromptsRequest()
+        >>> req.limit
+        50
+    """
+
+    limit: int = Field(50, ge=1, le=1000, description="Maximum number of prompts to return")
+    offset: int = Field(0, ge=0, description="Number of prompts to skip for pagination")
+    tags: List[str] = Field(default_factory=list, description="Optional tag filter to narrow results")
+
+
+class PromptSummary(BaseModelWithConfigDict):
+    """Summary representation of a prompt in meta-tool responses.
+
+    Attributes:
+        name: Prompt name identifier.
+        description: Human-readable description of the prompt.
+        tags: Tags associated with the prompt.
+        argument_schema: JSON Schema for the prompt's arguments.
+
+    Examples:
+        >>> summary = PromptSummary(name="summarize", description="Summarize text")
+        >>> summary.name
+        'summarize'
+    """
+
+    name: str = Field(..., description="Prompt name identifier")
+    description: Optional[str] = Field(None, description="Human-readable description of the prompt")
+    tags: List[str] = Field(default_factory=list, description="Tags associated with the prompt")
+    argument_schema: Optional[Dict[str, Any]] = Field(None, description="JSON Schema for the prompt's arguments")
+
+
+class ListPromptsResponse(BaseModelWithConfigDict):
+    """Response schema for the list_prompts meta-tool.
+
+    Attributes:
+        prompts: List of prompt summaries.
+        total_count: Total number of prompts matching the filter.
+        has_more: Whether more results are available.
+
+    Examples:
+        >>> resp = ListPromptsResponse(prompts=[], total_count=0, has_more=False)
+        >>> resp.total_count
+        0
+    """
+
+    prompts: List[PromptSummary] = Field(default_factory=list, description="List of prompt summaries")
+    total_count: int = Field(0, ge=0, description="Total number of prompts matching the filter")
+    has_more: bool = Field(False, description="Whether more results are available")
+
+
+class GetPromptRequest(BaseModelWithConfigDict):
+    """Request schema for the get_prompt meta-tool.
+
+    Attributes:
+        name: The name of the prompt to retrieve.
+        arguments: Optional arguments to render the prompt template.
+
+    Examples:
+        >>> req = GetPromptRequest(name="summarize")
+        >>> req.name
+        'summarize'
+    """
+
+    name: str = Field(..., min_length=1, max_length=255, description="The name of the prompt to retrieve")
+    arguments: Dict[str, str] = Field(default_factory=dict, description="Optional arguments to render the prompt template")
+
+
+class GetPromptResponse(BaseModelWithConfigDict):
+    """Response schema for the get_prompt meta-tool.
+
+    Attributes:
+        name: Prompt name.
+        description: Prompt description.
+        template: The raw prompt template.
+        rendered: The rendered prompt with arguments applied (if arguments were provided).
+        argument_schema: JSON Schema for the prompt's arguments.
+        tags: Tags associated with the prompt.
+
+    Examples:
+        >>> resp = GetPromptResponse(name="summarize", template="Summarize: {text}")
+        >>> resp.name
+        'summarize'
+    """
+
+    name: str = Field(..., description="Prompt name")
+    description: Optional[str] = Field(None, description="Prompt description")
+    template: str = Field(..., description="The raw prompt template")
+    rendered: Optional[str] = Field(None, description="The rendered prompt with arguments applied")
+    argument_schema: Optional[Dict[str, Any]] = Field(None, description="JSON Schema for the prompt's arguments")
+    tags: List[str] = Field(default_factory=list, description="Tags associated with the prompt")
+
+
 class AuthorizeGatewayRequest(BaseModelWithConfigDict):
     """Request schema for the authorize_gateway meta-tool.
 
@@ -598,5 +802,21 @@ META_TOOL_DEFINITIONS: Dict[str, Dict[str, Any]] = {
     "authorize_gateway": {
         "description": "Check OAuth authorization status for a gateway and provide an authorization URL if needed. Use this when a tool call fails with 'User authentication required for OAuth-protected gateway'.",
         "input_schema": AuthorizeGatewayRequest.model_json_schema(),
+    },
+    "list_resources": {
+        "description": "List all MCP resources (documents, guides, knowledge bases) available in scope with optional filtering by tags or MIME type.",
+        "input_schema": ListResourcesRequest.model_json_schema(),
+    },
+    "read_resource": {
+        "description": "Read the content of an MCP resource by its URI. Returns the full text content of the resource.",
+        "input_schema": ReadResourceRequest.model_json_schema(),
+    },
+    "list_prompts": {
+        "description": "List all MCP prompt templates available in scope with optional filtering by tags.",
+        "input_schema": ListPromptsRequest.model_json_schema(),
+    },
+    "get_prompt": {
+        "description": "Get a prompt template by name, optionally rendering it with provided arguments.",
+        "input_schema": GetPromptRequest.model_json_schema(),
     },
 }

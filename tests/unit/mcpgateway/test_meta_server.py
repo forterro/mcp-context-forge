@@ -34,15 +34,23 @@ from mcpgateway.meta_server.schemas import (
     DescribeToolResponse,
     ExecuteToolRequest,
     ExecuteToolResponse,
+    GetPromptRequest,
+    GetPromptResponse,
     GetSimilarToolsRequest,
     GetSimilarToolsResponse,
     GetToolCategoriesRequest,
     GetToolCategoriesResponse,
+    ListPromptsRequest,
+    ListPromptsResponse,
+    ListResourcesRequest,
+    ListResourcesResponse,
     ListToolsRequest,
     ListToolsResponse,
     META_TOOL_DEFINITIONS,
     MetaConfig,
     MetaToolScope,
+    ReadResourceRequest,
+    ReadResourceResponse,
     SearchToolsRequest,
     SearchToolsResponse,
     ServerType,
@@ -1904,4 +1912,346 @@ class TestListToolsImplementation:
 
         assert "totalCount" in result
         assert "hasMore" in result
+
+
+# ------------------------------------------------------------------
+# Tests for list_resources / read_resource / list_prompts / get_prompt
+# ------------------------------------------------------------------
+
+
+def _make_mock_resource(uri="resource://test", name="test-resource", description="A test resource",
+                        mime_type="text/markdown", text_content="# Hello", tags=None, enabled=True, size=7):
+    """Create a mock Resource object."""
+    r = MagicMock()
+    r.uri = uri
+    r.name = name
+    r.description = description
+    r.mime_type = mime_type
+    r.text_content = text_content
+    r.binary_content = None
+    r.tags = tags or []
+    r.enabled = enabled
+    r.size = size
+    r.created_at = None
+    return r
+
+
+def _make_mock_prompt(name="test-prompt", description="A test prompt", template="Hello {name}",
+                      argument_schema=None, tags=None, enabled=True):
+    """Create a mock Prompt object."""
+    p = MagicMock()
+    p.name = name
+    p.description = description
+    p.template = template
+    p.argument_schema = argument_schema or {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]}
+    p.tags = tags or []
+    p.enabled = enabled
+    p.created_at = None
+    return p
+
+
+class TestListResourcesMetaTool:
+    """Tests for list_resources meta-tool."""
+
+    def test_list_resources_returns_results(self):
+        """Test that list_resources returns resources from DB."""
+        service = MetaServerService()
+        mock_resources = [
+            _make_mock_resource(uri="resource://a", name="res-a", tags=["guide"]),
+            _make_mock_resource(uri="resource://b", name="res-b", tags=["docs"]),
+        ]
+
+        mock_db = MagicMock()
+        mock_query = MagicMock()
+        mock_query.filter.return_value = mock_query
+        mock_query.order_by.return_value = mock_query
+        mock_query.all.return_value = mock_resources
+        mock_db.query.return_value = mock_query
+
+        def mock_get_db():
+            yield mock_db
+
+        with patch("mcpgateway.meta_server.service.get_db", mock_get_db):
+            result = asyncio.run(service.handle_meta_tool_call("list_resources", {}))
+
+        assert result["totalCount"] == 2
+        assert len(result["resources"]) == 2
+        assert result["resources"][0]["uri"] == "resource://a"
+        assert result["resources"][1]["uri"] == "resource://b"
+
+    def test_list_resources_with_tag_filter(self):
+        """Test that tag filtering works."""
+        service = MetaServerService()
+        mock_resources = [
+            _make_mock_resource(uri="resource://a", name="res-a", tags=["guide"]),
+            _make_mock_resource(uri="resource://b", name="res-b", tags=["docs"]),
+        ]
+
+        mock_db = MagicMock()
+        mock_query = MagicMock()
+        mock_query.filter.return_value = mock_query
+        mock_query.order_by.return_value = mock_query
+        mock_query.all.return_value = mock_resources
+        mock_db.query.return_value = mock_query
+
+        def mock_get_db():
+            yield mock_db
+
+        with patch("mcpgateway.meta_server.service.get_db", mock_get_db):
+            result = asyncio.run(service.handle_meta_tool_call("list_resources", {"tags": ["guide"]}))
+
+        assert result["totalCount"] == 1
+        assert result["resources"][0]["name"] == "res-a"
+
+    def test_list_resources_empty(self):
+        """Test list_resources with no results."""
+        service = MetaServerService()
+
+        mock_db = MagicMock()
+        mock_query = MagicMock()
+        mock_query.filter.return_value = mock_query
+        mock_query.order_by.return_value = mock_query
+        mock_query.all.return_value = []
+        mock_db.query.return_value = mock_query
+
+        def mock_get_db():
+            yield mock_db
+
+        with patch("mcpgateway.meta_server.service.get_db", mock_get_db):
+            result = asyncio.run(service.handle_meta_tool_call("list_resources", {}))
+
+        assert result["totalCount"] == 0
+        assert result["resources"] == []
+        assert result["hasMore"] is False
+
+    def test_list_resources_pagination(self):
+        """Test list_resources with offset and limit."""
+        service = MetaServerService()
+        mock_resources = [
+            _make_mock_resource(uri=f"resource://{i}", name=f"res-{i}")
+            for i in range(5)
+        ]
+
+        mock_db = MagicMock()
+        mock_query = MagicMock()
+        mock_query.filter.return_value = mock_query
+        mock_query.order_by.return_value = mock_query
+        mock_query.all.return_value = mock_resources
+        mock_db.query.return_value = mock_query
+
+        def mock_get_db():
+            yield mock_db
+
+        with patch("mcpgateway.meta_server.service.get_db", mock_get_db):
+            result = asyncio.run(service.handle_meta_tool_call("list_resources", {"limit": 2, "offset": 0}))
+
+        assert result["totalCount"] == 5
+        assert len(result["resources"]) == 2
+        assert result["hasMore"] is True
+
+
+class TestReadResourceMetaTool:
+    """Tests for read_resource meta-tool."""
+
+    def test_read_resource_returns_content(self):
+        """Test that read_resource returns text content."""
+        service = MetaServerService()
+        mock_resource = _make_mock_resource(
+            uri="resource://test/guide",
+            name="guide",
+            text_content="# Guide\nThis is the content.",
+        )
+
+        mock_db = MagicMock()
+        mock_query = MagicMock()
+        mock_query.filter.return_value = mock_query
+        mock_query.first.return_value = mock_resource
+        mock_db.query.return_value = mock_query
+
+        def mock_get_db():
+            yield mock_db
+
+        with patch("mcpgateway.meta_server.service.get_db", mock_get_db):
+            result = asyncio.run(service.handle_meta_tool_call("read_resource", {"uri": "resource://test/guide"}))
+
+        assert result["uri"] == "resource://test/guide"
+        assert result["name"] == "guide"
+        assert "Guide" in result["text"]
+
+    def test_read_resource_not_found(self):
+        """Test read_resource with unknown URI."""
+        service = MetaServerService()
+
+        mock_db = MagicMock()
+        mock_query = MagicMock()
+        mock_query.filter.return_value = mock_query
+        mock_query.first.return_value = None
+        mock_db.query.return_value = mock_query
+
+        def mock_get_db():
+            yield mock_db
+
+        with patch("mcpgateway.meta_server.service.get_db", mock_get_db):
+            result = asyncio.run(service.handle_meta_tool_call("read_resource", {"uri": "resource://not/found"}))
+
+        assert result["uri"] == "resource://not/found"
+        assert "not found" in result["text"].lower()
+
+    def test_read_resource_empty_uri(self):
+        """Test read_resource with empty URI returns error."""
+        service = MetaServerService()
+        result = asyncio.run(service.handle_meta_tool_call("read_resource", {"uri": ""}))
+        assert "required" in result["text"].lower()
+
+
+class TestListPromptsMetaTool:
+    """Tests for list_prompts meta-tool."""
+
+    def test_list_prompts_returns_results(self):
+        """Test that list_prompts returns prompts from DB."""
+        service = MetaServerService()
+        mock_prompts = [
+            _make_mock_prompt(name="summarize", description="Summarize text", tags=["utility"]),
+            _make_mock_prompt(name="translate", description="Translate text", tags=["language"]),
+        ]
+
+        mock_db = MagicMock()
+        mock_query = MagicMock()
+        mock_query.filter.return_value = mock_query
+        mock_query.order_by.return_value = mock_query
+        mock_query.all.return_value = mock_prompts
+        mock_db.query.return_value = mock_query
+
+        def mock_get_db():
+            yield mock_db
+
+        with patch("mcpgateway.meta_server.service.get_db", mock_get_db):
+            result = asyncio.run(service.handle_meta_tool_call("list_prompts", {}))
+
+        assert result["totalCount"] == 2
+        assert len(result["prompts"]) == 2
+        assert result["prompts"][0]["name"] == "summarize"
+
+    def test_list_prompts_empty(self):
+        """Test list_prompts with no results."""
+        service = MetaServerService()
+
+        mock_db = MagicMock()
+        mock_query = MagicMock()
+        mock_query.filter.return_value = mock_query
+        mock_query.order_by.return_value = mock_query
+        mock_query.all.return_value = []
+        mock_db.query.return_value = mock_query
+
+        def mock_get_db():
+            yield mock_db
+
+        with patch("mcpgateway.meta_server.service.get_db", mock_get_db):
+            result = asyncio.run(service.handle_meta_tool_call("list_prompts", {}))
+
+        assert result["totalCount"] == 0
+        assert result["prompts"] == []
+
+
+class TestGetPromptMetaTool:
+    """Tests for get_prompt meta-tool."""
+
+    def test_get_prompt_returns_template(self):
+        """Test that get_prompt returns prompt template."""
+        service = MetaServerService()
+        mock_prompt = _make_mock_prompt(name="greet", template="Hello {name}!")
+
+        mock_db = MagicMock()
+        mock_query = MagicMock()
+        mock_query.filter.return_value = mock_query
+        mock_query.first.return_value = mock_prompt
+        mock_db.query.return_value = mock_query
+
+        def mock_get_db():
+            yield mock_db
+
+        with patch("mcpgateway.meta_server.service.get_db", mock_get_db):
+            result = asyncio.run(service.handle_meta_tool_call("get_prompt", {"name": "greet"}))
+
+        assert result["name"] == "greet"
+        assert result["template"] == "Hello {name}!"
+        assert result["rendered"] is None
+
+    def test_get_prompt_with_rendering(self):
+        """Test that get_prompt renders template with arguments."""
+        service = MetaServerService()
+        mock_prompt = _make_mock_prompt(name="greet", template="Hello {name}!")
+        mock_prompt.validate_arguments = MagicMock()
+
+        mock_db = MagicMock()
+        mock_query = MagicMock()
+        mock_query.filter.return_value = mock_query
+        mock_query.first.return_value = mock_prompt
+        mock_db.query.return_value = mock_query
+
+        def mock_get_db():
+            yield mock_db
+
+        with patch("mcpgateway.meta_server.service.get_db", mock_get_db):
+            result = asyncio.run(service.handle_meta_tool_call("get_prompt", {
+                "name": "greet",
+                "arguments": {"name": "World"},
+            }))
+
+        assert result["name"] == "greet"
+        assert result["rendered"] == "Hello World!"
+
+    def test_get_prompt_not_found(self):
+        """Test get_prompt with unknown name."""
+        service = MetaServerService()
+
+        mock_db = MagicMock()
+        mock_query = MagicMock()
+        mock_query.filter.return_value = mock_query
+        mock_query.first.return_value = None
+        mock_db.query.return_value = mock_query
+
+        def mock_get_db():
+            yield mock_db
+
+        with patch("mcpgateway.meta_server.service.get_db", mock_get_db):
+            result = asyncio.run(service.handle_meta_tool_call("get_prompt", {"name": "nonexistent"}))
+
+        assert result["name"] == "nonexistent"
+        assert "not found" in result["description"].lower()
+
+    def test_get_prompt_empty_name(self):
+        """Test get_prompt with empty name returns error."""
+        service = MetaServerService()
+        result = asyncio.run(service.handle_meta_tool_call("get_prompt", {"name": ""}))
+        assert "required" in result["description"].lower()
+
+
+class TestMetaToolDefinitionsIncludeNewTools:
+    """Test that META_TOOL_DEFINITIONS includes the 4 new meta-tools."""
+
+    def test_list_resources_in_definitions(self):
+        assert "list_resources" in META_TOOL_DEFINITIONS
+
+    def test_read_resource_in_definitions(self):
+        assert "read_resource" in META_TOOL_DEFINITIONS
+
+    def test_list_prompts_in_definitions(self):
+        assert "list_prompts" in META_TOOL_DEFINITIONS
+
+    def test_get_prompt_in_definitions(self):
+        assert "get_prompt" in META_TOOL_DEFINITIONS
+
+    def test_total_meta_tools_is_11(self):
+        assert len(META_TOOL_DEFINITIONS) == 11
+
+    def test_service_returns_11_definitions(self):
+        service = MetaServerService()
+        defs = service.get_meta_tool_definitions()
+        assert len(defs) == 11
+        names = {d["name"] for d in defs}
+        assert "list_resources" in names
+        assert "read_resource" in names
+        assert "list_prompts" in names
+        assert "get_prompt" in names
         assert "tools" in result

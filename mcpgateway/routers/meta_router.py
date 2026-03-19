@@ -30,12 +30,20 @@ from mcpgateway.meta_server.schemas import (
     DescribeToolResponse,
     ExecuteToolRequest,
     ExecuteToolResponse,
+    GetPromptRequest,
+    GetPromptResponse,
     GetSimilarToolsRequest,
     GetSimilarToolsResponse,
     GetToolCategoriesRequest,
     GetToolCategoriesResponse,
+    ListPromptsRequest,
+    ListPromptsResponse,
+    ListResourcesRequest,
+    ListResourcesResponse,
     ListToolsRequest,
     ListToolsResponse,
+    ReadResourceRequest,
+    ReadResourceResponse,
     SearchToolsRequest,
     SearchToolsResponse,
 )
@@ -322,4 +330,128 @@ async def get_tool_categories(
         return GetToolCategoriesResponse(**result)
     except Exception as e:
         logger.error(f"Error getting tool categories: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error")
+
+
+@router.post("/list_resources", response_model=ListResourcesResponse)
+async def list_resources(
+    req: ListResourcesRequest,
+    request: Request,
+    current_user_ctx: dict = Depends(get_current_user_with_permissions),
+    db: Session = Depends(get_db),
+) -> ListResourcesResponse:
+    """List MCP resources with optional filtering by tags or MIME type.
+
+    Args:
+        req: List resources request parameters
+        request: FastAPI request object
+        current_user_ctx: Current user context with permissions
+        db: Database session
+
+    Returns:
+        ListResourcesResponse: Paginated resource list
+
+    Raises:
+        HTTPException: If listing fails
+    """
+    try:
+        meta_service = get_meta_server_service()
+        arguments = req.model_dump()
+        result = await meta_service._list_resources(arguments)
+        return ListResourcesResponse(**result)
+    except Exception as e:
+        logger.error(f"Error listing resources: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error")
+
+
+@router.post("/read_resource", response_model=ReadResourceResponse)
+async def read_resource(
+    req: ReadResourceRequest,
+    request: Request,
+    current_user_ctx: dict = Depends(get_current_user_with_permissions),
+    db: Session = Depends(get_db),
+) -> ReadResourceResponse:
+    """Read the content of an MCP resource by URI.
+
+    Args:
+        req: Read resource request with URI
+        request: FastAPI request object
+        current_user_ctx: Current user context with permissions
+        db: Database session
+
+    Returns:
+        ReadResourceResponse: Resource content
+
+    Raises:
+        HTTPException: If reading fails
+    """
+    try:
+        meta_service = get_meta_server_service()
+        arguments = req.model_dump()
+        result = await meta_service._read_resource(arguments)
+        return ReadResourceResponse(**result)
+    except Exception as e:
+        logger.error(f"Error reading resource: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error")
+
+
+@router.post("/list_prompts", response_model=ListPromptsResponse)
+async def list_prompts(
+    req: ListPromptsRequest,
+    request: Request,
+    current_user_ctx: dict = Depends(get_current_user_with_permissions),
+    db: Session = Depends(get_db),
+) -> ListPromptsResponse:
+    """List MCP prompt templates with optional filtering by tags.
+
+    Args:
+        req: List prompts request parameters
+        request: FastAPI request object
+        current_user_ctx: Current user context with permissions
+        db: Database session
+
+    Returns:
+        ListPromptsResponse: Paginated prompt list
+
+    Raises:
+        HTTPException: If listing fails
+    """
+    try:
+        meta_service = get_meta_server_service()
+        arguments = req.model_dump()
+        result = await meta_service._list_prompts(arguments)
+        return ListPromptsResponse(**result)
+    except Exception as e:
+        logger.error(f"Error listing prompts: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error")
+
+
+@router.post("/get_prompt", response_model=GetPromptResponse)
+async def get_prompt(
+    req: GetPromptRequest,
+    request: Request,
+    current_user_ctx: dict = Depends(get_current_user_with_permissions),
+    db: Session = Depends(get_db),
+) -> GetPromptResponse:
+    """Get a prompt template by name, optionally rendering it with arguments.
+
+    Args:
+        req: Get prompt request with name and optional arguments
+        request: FastAPI request object
+        current_user_ctx: Current user context with permissions
+        db: Database session
+
+    Returns:
+        GetPromptResponse: Prompt template and optionally rendered content
+
+    Raises:
+        HTTPException: If prompt retrieval fails
+    """
+    try:
+        meta_service = get_meta_server_service()
+        arguments = req.model_dump()
+        result = await meta_service._get_prompt(arguments)
+        return GetPromptResponse(**result)
+    except Exception as e:
+        logger.error(f"Error getting prompt: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error")
