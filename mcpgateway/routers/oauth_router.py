@@ -779,7 +779,7 @@ async def authorize_all_gateways(
     gateways = db.execute(
         select(Gateway).where(
             Gateway.auth_type == "oauth",
-            Gateway.active.is_(True),
+            Gateway.enabled.is_(True),
         )
     ).scalars().all()
 
