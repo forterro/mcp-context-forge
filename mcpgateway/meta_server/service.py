@@ -1080,7 +1080,7 @@ class MetaServerService:
                     gateway_name=gateway.name,
                     status="authorization_required",
                     authorize_url=authorize_url,
-                    message=f"OAuth authorization required for '{gateway.name}'. Open the following URL in your browser to authorize: {authorize_url}",
+                    message=f"OAuth authorization required for '{gateway.name}'. [Click here to authorize]({authorize_url})",
                 ).model_dump(by_alias=True)
 
             finally:
@@ -1205,7 +1205,7 @@ class MetaServerService:
                     status="authorization_required",
                     authorize_url=authorize_url,
                     gateways=[gs.model_dump(by_alias=True) for gs in gateway_statuses],
-                    message=f"{pending_count} gateway(s) need authorization: {pending_names}. Open this URL in your browser to authorize all at once: {authorize_url}",
+                    message=f"{pending_count} gateway(s) need authorization: {pending_names}. [Click here to authorize all at once]({authorize_url})",
                 ).model_dump(by_alias=True)
 
             finally:
