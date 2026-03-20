@@ -1052,6 +1052,28 @@ def _resolve_root_path(request: Request) -> str:
     return root_path.rstrip("/")
 
 
+def _is_safe_local_path(path: str) -> bool:
+    """Validate that a path is a safe local redirect target (no open redirect).
+
+    Args:
+        path: The path to validate.
+
+    Returns:
+        True if the path is a safe relative path starting with ``/``.
+    """
+    if not path or not isinstance(path, str):
+        return False
+    if not path.startswith("/"):
+        return False
+    # Block protocol-relative URLs (//evil.com), authority injection (@), backslash tricks
+    if path.startswith("//") or "@" in path or "\\" in path:
+        return False
+    parsed = urllib.parse.urlparse(path)
+    if parsed.scheme or parsed.netloc:
+        return False
+    return True
+
+
 def _admin_cookie_path(request: Request) -> str:
     """Build admin cookie path honoring ASGI root_path.
 
@@ -3825,6 +3847,22 @@ async def admin_login_page(request: Request) -> Response:
         },
     )
     _set_admin_csrf_cookie(request, response)
+
+    # Preserve ?next= parameter as a short-lived cookie so SSO callback can redirect
+    # back to the original URL (e.g. /oauth/authorize/{gateway_id}) after login.
+    next_url = request.query_params.get("next", "")
+    if next_url and _is_safe_local_path(next_url):
+        use_secure = (settings.environment == "production") or settings.secure_cookies
+        response.set_cookie(
+            key="post_login_next",
+            value=next_url,
+            max_age=300,  # 5 minutes — enough for SSO round-trip
+            httponly=True,
+            secure=use_secure,
+            samesite=settings.cookie_samesite,
+            path=settings.app_root_path or "/",
+        )
+
     return response
 
 
