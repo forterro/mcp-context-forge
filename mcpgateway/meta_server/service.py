@@ -40,9 +40,11 @@ from sqlalchemy import or_
 # First-Party
 from mcpgateway.db import get_db, Tool, ToolEmbedding
 from mcpgateway.meta_server.schemas import (
+    AuthorizeAllGatewaysResponse,
     AuthorizeGatewayResponse,
     DescribeToolResponse,
     ExecuteToolResponse,
+    GatewayAuthStatus,
     GetPromptResponse,
     GetSimilarToolsResponse,
     GetToolCategoriesResponse,
@@ -210,6 +212,7 @@ class MetaServerService:
             "get_tool_categories": self._get_tool_categories,
             "get_similar_tools": self._get_similar_tools,
             "authorize_gateway": self._authorize_gateway,
+            "authorize_all_gateways": self._authorize_all_gateways,
             "list_resources": self._list_resources,
             "read_resource": self._read_resource,
             "list_prompts": self._list_prompts,
@@ -1092,6 +1095,130 @@ class MetaServerService:
                 gateway_id="",
                 gateway_name=gateway_name,
                 status="error",
+                message=f"Error checking gateway authorization: {str(e)}",
+            ).model_dump(by_alias=True)
+
+    async def _authorize_all_gateways(
+        self,
+        arguments: Dict[str, Any],
+        user_email: Optional[str] = None,
+        token_teams: Optional[List[str]] = None,
+        request_headers: Optional[Dict[str, str]] = None,
+        **kwargs: Any,
+    ) -> Dict[str, Any]:
+        """Check OAuth authorization status for all gateways and return a single authorize-all URL.
+
+        Args:
+            arguments: No required arguments.
+            user_email: Email of the authenticated user.
+            token_teams: Team IDs from JWT token.
+            request_headers: Headers from the original request.
+
+        Returns:
+            AuthorizeAllGatewaysResponse as dict with status and optional authorize_url.
+        """
+        # First-Party
+        from mcpgateway.config import get_settings
+        from mcpgateway.db import Gateway
+        from mcpgateway.services.token_storage_service import TokenStorageService
+
+        # Resolve user_email from JWT if not provided
+        effective_email = user_email
+        if not effective_email and request_headers:
+            auth_header = request_headers.get("authorization", "")
+            if auth_header.startswith("Bearer "):
+                try:
+                    import jwt as pyjwt  # pylint: disable=import-outside-toplevel
+                    token = auth_header[7:]
+                    payload = pyjwt.decode(token, options={"verify_signature": False})
+                    effective_email = payload.get("email") or payload.get("sub")
+                    if effective_email:
+                        effective_email = effective_email.strip().lower()
+                except Exception:
+                    pass
+
+        try:
+            db_gen = get_db()
+            db = next(db_gen)
+            try:
+                from sqlalchemy import select  # pylint: disable=import-outside-toplevel
+
+                # Find all active OAuth gateways with authorization_code flow
+                gateways = db.execute(
+                    select(Gateway).where(
+                        Gateway.auth_type == "oauth",
+                        Gateway.active.is_(True),
+                    )
+                ).scalars().all()
+
+                token_service = TokenStorageService(db)
+                gateway_statuses = []
+                pending_count = 0
+
+                for gw in gateways:
+                    if not gw.oauth_config or gw.oauth_config.get("grant_type") != "authorization_code":
+                        continue
+
+                    gw_status = "authorization_required"
+                    if effective_email:
+                        token_info = await token_service.get_token_info(gw.id, effective_email)
+                        if token_info and not token_info.get("is_expired", True):
+                            gw_status = "authorized"
+
+                    if gw_status == "authorization_required":
+                        pending_count += 1
+
+                    gateway_statuses.append(GatewayAuthStatus(
+                        gateway_id=gw.id,
+                        gateway_name=gw.name,
+                        status=gw_status,
+                    ))
+
+                if not gateway_statuses:
+                    return AuthorizeAllGatewaysResponse(
+                        status="all_authorized",
+                        gateways=[],
+                        message="No OAuth gateways found.",
+                    ).model_dump(by_alias=True)
+
+                if pending_count == 0:
+                    names = ", ".join(gs.gateway_name for gs in gateway_statuses)
+                    return AuthorizeAllGatewaysResponse(
+                        status="all_authorized",
+                        gateways=[gs.model_dump(by_alias=True) for gs in gateway_statuses],
+                        message=f"All {len(gateway_statuses)} OAuth gateways are authorized: {names}",
+                    ).model_dump(by_alias=True)
+
+                # Build authorize-all URL
+                settings = get_settings()
+                app_domain = str(settings.app_domain or "").rstrip("/")
+                root_path = str(settings.app_root_path or "").strip("/")
+                base = f"{app_domain}/{root_path}" if root_path else app_domain
+                authorize_url = f"{base}/oauth/authorize-all"
+
+                pending_names = ", ".join(
+                    gs.gateway_name for gs in gateway_statuses
+                    if gs.status == "authorization_required"
+                )
+
+                return AuthorizeAllGatewaysResponse(
+                    status="authorization_required",
+                    authorize_url=authorize_url,
+                    gateways=[gs.model_dump(by_alias=True) for gs in gateway_statuses],
+                    message=f"{pending_count} gateway(s) need authorization: {pending_names}. Open this URL in your browser to authorize all at once: {authorize_url}",
+                ).model_dump(by_alias=True)
+
+            finally:
+                try:
+                    next(db_gen)
+                except StopIteration:
+                    pass
+
+        except Exception as e:
+            logger.error(f"Error in authorize_all_gateways: {e}")
+            return AuthorizeAllGatewaysResponse(
+                status="error",
+                gateways=[],
                 message=f"Error checking gateway authorization: {str(e)}",
             ).model_dump(by_alias=True)
 

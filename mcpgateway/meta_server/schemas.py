@@ -770,6 +770,61 @@ class AuthorizeGatewayResponse(BaseModelWithConfigDict):
     message: str = Field(..., description="Human-readable status message")
 
 
+class AuthorizeAllGatewaysRequest(BaseModelWithConfigDict):
+    """Request schema for the authorize_all_gateways meta-tool.
+
+    No parameters required — the tool checks all OAuth gateways
+    the current user has access to.
+
+    Examples:
+        >>> req = AuthorizeAllGatewaysRequest()
+        >>> isinstance(req, AuthorizeAllGatewaysRequest)
+        True
+    """
+
+    pass
+
+
+class GatewayAuthStatus(BaseModelWithConfigDict):
+    """Authorization status for a single gateway.
+
+    Attributes:
+        gateway_id: ID of the gateway.
+        gateway_name: Name of the gateway.
+        status: Token status (authorized or authorization_required).
+
+    Examples:
+        >>> gs = GatewayAuthStatus(gateway_id="abc", gateway_name="M365", status="authorized")
+        >>> gs.status
+        'authorized'
+    """
+
+    gateway_id: str = Field(..., description="ID of the gateway")
+    gateway_name: str = Field(..., description="Name of the gateway")
+    status: str = Field(..., description="Token status: authorized or authorization_required")
+
+
+class AuthorizeAllGatewaysResponse(BaseModelWithConfigDict):
+    """Response schema for the authorize_all_gateways meta-tool.
+
+    Attributes:
+        status: Overall status (all_authorized, authorization_required, error).
+        authorize_url: Single URL to authorize all pending gateways at once.
+        gateways: Per-gateway authorization status.
+        message: Human-readable summary.
+
+    Examples:
+        >>> resp = AuthorizeAllGatewaysResponse(status="all_authorized", gateways=[], message="ok")
+        >>> resp.status
+        'all_authorized'
+    """
+
+    status: str = Field(..., description="Overall status: all_authorized, authorization_required, error")
+    authorize_url: Optional[str] = Field(None, description="URL to open in browser to authorize all pending gateways")
+    gateways: List[GatewayAuthStatus] = Field(default_factory=list, description="Per-gateway authorization status")
+    message: str = Field(..., description="Human-readable summary")
+
+
 # Meta-Tool Definition Constants
 
 #: Registry of meta-tool names and their input schemas.
@@ -802,6 +857,10 @@ META_TOOL_DEFINITIONS: Dict[str, Dict[str, Any]] = {
     "authorize_gateway": {
         "description": "Check OAuth authorization status for a gateway and provide an authorization URL if needed. Use this when a tool call fails with 'User authentication required for OAuth-protected gateway'.",
         "input_schema": AuthorizeGatewayRequest.model_json_schema(),
+    },
+    "authorize_all_gateways": {
+        "description": "Check OAuth authorization status for ALL gateways at once and provide a single URL to authorize all pending gateways. Use this proactively at the start of a session to ensure all tools are available, or when multiple gateways need authorization.",
+        "input_schema": AuthorizeAllGatewaysRequest.model_json_schema(),
     },
     "list_resources": {
         "description": "List all MCP resources (documents, guides, knowledge bases) available in scope with optional filtering by tags or MIME type.",
