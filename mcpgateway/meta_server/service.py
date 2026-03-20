@@ -1363,7 +1363,7 @@ class MetaServerService:
                     template=prompt.template,
                     rendered=rendered,
                     argument_schema=prompt.argument_schema,
-                    tags=prompt.tags or [],
+                    tags=self._normalize_tags(prompt.tags),
                 ).model_dump(by_alias=True)
             finally:
                 try:
