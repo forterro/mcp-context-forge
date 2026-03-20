@@ -744,12 +744,12 @@ async def oauth_callback(
         )
 
 
-@oauth_router.get("/authorize-all")
+@oauth_router.get("/authorize-all", response_model=None)
 async def authorize_all_gateways(
     request: Request,
     current_user: EmailUserResponse = Depends(get_current_user_with_permissions),
     db: Session = Depends(get_db),
-) -> RedirectResponse | HTMLResponse:
+):
     """Authorize all OAuth gateways the user has access to in a single flow.
 
     This endpoint chains OAuth authorization flows for all gateways that
