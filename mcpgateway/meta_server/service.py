@@ -1073,16 +1073,19 @@ class MetaServerService:
                         message="Gateway does not require OAuth authorization",
                     ).model_dump(by_alias=True)
 
-                # Check if user already has a valid token
+                # Check if user already has a valid token (attempt refresh if expired)
                 if effective_email:
                     token_service = TokenStorageService(db)
-                    token_info = await token_service.get_token_info(gateway_id, effective_email)
-                    if token_info and not token_info.get("is_expired", True):
+                    # get_user_token attempts automatic refresh via refresh_token
+                    valid_token = await token_service.get_user_token(gateway_id, effective_email)
+                    if valid_token:
+                        token_info = await token_service.get_token_info(gateway_id, effective_email)
+                        expires_at = token_info.get('expires_at', 'unknown') if token_info else 'unknown'
                         return AuthorizeGatewayResponse(
                             gateway_id=gateway_id,
                             gateway_name=gateway.name,
                             status="authorized",
-                            message=f"You already have a valid OAuth token for '{gateway.name}' (expires {token_info.get('expires_at', 'unknown')})",
+                            message=f"You already have a valid OAuth token for '{gateway.name}' (expires {expires_at})",
                         ).model_dump(by_alias=True)
 
                 # Build the authorize URL
@@ -1178,8 +1181,9 @@ class MetaServerService:
 
                     gw_status = "authorization_required"
                     if effective_email:
-                        token_info = await token_service.get_token_info(gw.id, effective_email)
-                        if token_info and not token_info.get("is_expired", True):
+                        # get_user_token attempts automatic refresh via refresh_token
+                        valid_token = await token_service.get_user_token(gw.id, effective_email)
+                        if valid_token:
                             gw_status = "authorized"
 
                     if gw_status == "authorization_required":
