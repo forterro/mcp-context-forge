@@ -887,9 +887,26 @@ class MetaServerService:
             db = next(db_gen)
             try:
                 service = MetaToolService(db)
+                tool_name = arguments.get("tool_name", "")
+                tool_arguments = arguments.get("arguments", {})
+
+                # Tolerate flat argument layout: some clients (e.g. Copilot Studio)
+                # send tool arguments at the same level as tool_name instead of
+                # nesting them inside "arguments". Detect this by collecting any
+                # keys that are not part of the execute_tool schema itself.
+                if not tool_arguments:
+                    _meta_keys = {"tool_name", "arguments", "scope"}
+                    extra = {k: v for k, v in arguments.items() if k not in _meta_keys}
+                    if extra:
+                        tool_arguments = extra
+                        logger.info(
+                            "execute_tool: restructured flat arguments into nested format "
+                            f"for tool '{tool_name}': {list(extra.keys())}"
+                        )
+
                 result = await service.execute_tool(
-                    tool_name=arguments.get("tool_name", ""),
-                    arguments=arguments.get("arguments", {}),
+                    tool_name=tool_name,
+                    arguments=tool_arguments,
                     scope=arguments.get("scope"),
                     user_email=user_email,
                     token_teams=token_teams,
