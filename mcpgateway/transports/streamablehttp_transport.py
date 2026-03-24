@@ -3125,16 +3125,11 @@ class _StreamableHttpAuthHandler:
         Returns:
             True if the request is allowed with public-only access, False if rejected.
         """
-        # If client supplied a Bearer header but with empty credentials, fail closed
-        if bearer_header_supplied:
-            return await self._send_error(detail="Invalid authentication credentials", headers={"WWW-Authenticate": "Bearer"})
-
-        # Strict mode: require authentication
-        if settings.mcp_require_auth:
-            return await self._send_error(detail="Authentication required for MCP endpoints", headers={"WWW-Authenticate": "Bearer"})
-
-        # Permissive mode: allow unauthenticated access with public-only scope
-        # BUT first check if this specific server requires OAuth (per-server enforcement)
+        # Build the WWW-Authenticate header, enriching it with RFC 9728
+        # resource_metadata when the target server has OAuth enabled.
+        # This must happen before any 401 response so that MCP clients
+        # (e.g. Open WebUI, VS Code) can discover the OAuth flow.
+        www_auth = "Bearer"
         match = _SERVER_ID_RE.search(path)
         if match:
             per_server_id = match.group("server_id")
@@ -3147,6 +3142,14 @@ class _StreamableHttpAuthHandler:
             except OAuthEnforcementUnavailableError:
                 logger.exception("OAuth enforcement check failed for server %s", per_server_id)
                 return await self._send_error(detail="Service unavailable — unable to verify server authentication requirements", status_code=503)
+
+        # If client supplied a Bearer header but with empty credentials, fail closed
+        if bearer_header_supplied:
+            return await self._send_error(detail="Invalid authentication credentials", headers={"WWW-Authenticate": www_auth})
+
+        # Strict mode: require authentication
+        if settings.mcp_require_auth:
+            return await self._send_error(detail="Authentication required for MCP endpoints", headers={"WWW-Authenticate": www_auth})
 
         # Set context indicating unauthenticated user with public-only access (teams=[])
         user_context_var.set(
