@@ -1183,17 +1183,31 @@ class OAuthManager:
         token_url = runtime_credentials["token_url"]
         redirect_uri = runtime_credentials["redirect_uri"]
 
+        # Determine token endpoint authentication method (RFC 6749 Section 2.3)
+        # - "client_secret_post" (default): client_id and client_secret in POST body
+        # - "client_secret_basic": credentials in Authorization: Basic header
+        token_auth_method = credentials.get("token_endpoint_auth_method", "client_secret_post")
+        use_basic_auth = token_auth_method == "client_secret_basic" and client_secret
+
+        # Build HTTP Basic Auth header if required by the provider
+        auth_header = None
+        if use_basic_auth:
+            basic_credentials = base64.b64encode(f"{client_id}:{client_secret}".encode()).decode()
+            auth_header = {"Authorization": f"Basic {basic_credentials}"}
+
         # Prepare token exchange data
         token_data = {
             "grant_type": "authorization_code",
             "code": code,
             "redirect_uri": redirect_uri,
-            "client_id": client_id,
         }
 
-        # Only include client_secret if present (public clients don't have secrets)
-        if client_secret:
-            token_data["client_secret"] = client_secret
+        # Include client credentials in POST body only when not using Basic auth
+        if not use_basic_auth:
+            token_data["client_id"] = client_id
+            # Only include client_secret if present (public clients don't have secrets)
+            if client_secret:
+                token_data["client_secret"] = client_secret
 
         # Add PKCE code_verifier if present (RFC 7636)
         if code_verifier:
@@ -1218,7 +1232,7 @@ class OAuthManager:
         for attempt in range(self.max_retries):
             try:
                 client = await self._get_client()
-                response = await client.post(token_url, data=token_data, timeout=self.request_timeout)
+                response = await client.post(token_url, data=token_data, headers=auth_header, timeout=self.request_timeout)
                 response.raise_for_status()
 
                 # GitHub returns form-encoded responses, not JSON
@@ -1283,16 +1297,28 @@ class OAuthManager:
         if not client_id:
             raise OAuthError("No client_id configured for OAuth provider")
 
+        # Determine token endpoint authentication method (RFC 6749 Section 2.3)
+        token_auth_method = credentials.get("token_endpoint_auth_method", "client_secret_post")
+        use_basic_auth = token_auth_method == "client_secret_basic" and client_secret
+
+        # Build HTTP Basic Auth header if required by the provider
+        auth_header = None
+        if use_basic_auth:
+            basic_credentials = base64.b64encode(f"{client_id}:{client_secret}".encode()).decode()
+            auth_header = {"Authorization": f"Basic {basic_credentials}"}
+
         # Prepare token refresh request
         token_data = {
             "grant_type": "refresh_token",
             "refresh_token": refresh_token,
-            "client_id": client_id,
         }
 
-        # Add client_secret if available (some providers require it)
-        if client_secret:
-            token_data["client_secret"] = client_secret
+        # Include client credentials in POST body only when not using Basic auth
+        if not use_basic_auth:
+            token_data["client_id"] = client_id
+            # Add client_secret if available (some providers require it)
+            if client_secret:
+                token_data["client_secret"] = client_secret
 
         # Add resource parameter for JWT access token (RFC 8707)
         # Must be included in refresh requests to maintain JWT token type
@@ -1313,7 +1339,7 @@ class OAuthManager:
         for attempt in range(self.max_retries):
             try:
                 client = await self._get_client()
-                response = await client.post(token_url, data=token_data, timeout=self.request_timeout)
+                response = await client.post(token_url, data=token_data, headers=auth_header, timeout=self.request_timeout)
                 if response.status_code == 200:
                     token_response = response.json()
 
