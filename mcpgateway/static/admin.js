@@ -6335,6 +6335,9 @@ async function editGateway(gatewayId) {
             "oauth-redirect-uri-gw-edit",
         );
         const oauthScopesField = safeGetElement("oauth-scopes-gw-edit");
+        const oauthTokenEndpointAuthMethodField = safeGetElement(
+            "oauth-token-endpoint-auth-method-gw-edit",
+        );
         const oauthAuthCodeFields = safeGetElement(
             "oauth-auth-code-fields-gw-edit",
         );
@@ -6462,6 +6465,13 @@ async function editGateway(gatewayId) {
                         Array.isArray(config.scopes)
                     ) {
                         oauthScopesField.value = config.scopes.join(" ");
+                    }
+                    if (
+                        oauthTokenEndpointAuthMethodField &&
+                        config.token_endpoint_auth_method
+                    ) {
+                        oauthTokenEndpointAuthMethodField.value =
+                            config.token_endpoint_auth_method;
                     }
                 }
                 break;
