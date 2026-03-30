@@ -31,6 +31,7 @@ from mcpgateway.db import Gateway as DbGateway
 from mcpgateway.db import Tool as DbTool
 from mcpgateway.plugins.framework import PluginManager
 from mcpgateway.plugins.framework.hooks.tools import ToolHookType
+from mcpgateway.plugins.framework.models import PluginResult
 from mcpgateway.schemas import AuthenticationValues, ToolCreate, ToolRead, ToolUpdate
 from mcpgateway.services.tool_service import (
     _decrypt_tool_header_value,
@@ -47,6 +48,7 @@ from mcpgateway.services.tool_service import (
     ToolNotFoundError,
     ToolResult,
     ToolService,
+    ToolTimeoutError,
     ToolValidationError,
 )
 from mcpgateway.utils.pagination import decode_cursor
@@ -256,7 +258,7 @@ class TestToolServiceHelpersExtended:
             return cached if key == top_tools_key else None
 
         monkeypatch.setattr(cache_module, "is_cache_enabled", lambda: True)
-        cache_module.metrics_cache.get = MagicMock(side_effect=get_only_top_tools)
+        monkeypatch.setattr(cache_module.metrics_cache, "get", MagicMock(side_effect=get_only_top_tools))
 
         mock_combined = MagicMock()
         monkeypatch.setattr("mcpgateway.services.tool_service.get_top_performers_combined", mock_combined)
@@ -1364,6 +1366,35 @@ class TestToolService:
         assert len(captured_tools) == 1
         assert captured_tools[0]["team"] == "Engineering Team"
         assert captured_tools[0]["team_id"] == "team-123"
+
+    @pytest.mark.asyncio
+    async def test_list_server_tools_with_include_metrics_true(self):
+        """Test that list_server_tools eager loads metrics when include_metrics=True.
+
+        This test ensures that when include_metrics=True, the query includes
+        selectinload for both metrics and metrics_hourly relationships to prevent N+1 queries.
+        Regression test for PR #3649 performance optimization.
+        """
+        mock_db = Mock()
+        mock_tool = Mock(enabled=True, team_id=None, team=None)
+        mock_db.execute.return_value.scalars.return_value.all.return_value = [mock_tool]
+
+        service = ToolService()
+        service.convert_tool_to_read = Mock(return_value="converted_tool_with_metrics")
+
+        # Call with include_metrics=True to trigger eager loading code path
+        tools = await service.list_server_tools(mock_db, server_id="server123", include_metrics=True)
+
+        assert tools == ["converted_tool_with_metrics"]
+        # Verify convert_tool_to_read was called with include_metrics=True
+        service.convert_tool_to_read.assert_called_once_with(
+            mock_tool,
+            include_metrics=True,  # This exercises the eager loading code path
+            include_auth=False,
+            requesting_user_email=None,
+            requesting_user_is_admin=False,
+            requesting_user_team_roles=None,
+        )
 
     @pytest.mark.asyncio
     async def test_get_tool(self, tool_service, mock_tool, test_db):
@@ -3225,7 +3256,7 @@ class TestToolService:
 
         bind = MagicMock()
         bind.dialect = MagicMock()
-        bind.dialect.name = "sqlite"  # or "postgresql" or "mysql"
+        bind.dialect.name = "sqlite"  # or "postgresql"
         session.get_bind.return_value = bind
 
         # Mock convert_tool_to_read
@@ -3481,6 +3512,7 @@ class TestToolService:
         mock_post_result.continue_processing = True
         mock_post_result.violation = None
         mock_post_result.modified_payload = None
+        mock_post_result.retry_delay_ms = 0
 
         tool_service._plugin_manager = Mock()
 
@@ -3529,6 +3561,7 @@ class TestToolService:
         mock_post_result.continue_processing = True
         mock_post_result.violation = None
         mock_post_result.modified_payload = mock_modified_payload
+        mock_post_result.retry_delay_ms = 0
 
         # First-Party
         from mcpgateway.plugins.framework import PluginResult, ToolHookType
@@ -3580,6 +3613,7 @@ class TestToolService:
         mock_post_result.continue_processing = True
         mock_post_result.violation = None
         mock_post_result.modified_payload = mock_modified_payload
+        mock_post_result.retry_delay_ms = 0
 
         # First-Party
         from mcpgateway.plugins.framework import ToolHookType
@@ -3742,6 +3776,248 @@ class TestToolService:
             await tool_service.invoke_tool(test_db, "test_tool", {"param": "value"}, request_headers=None)
 
         await tool_service._plugin_manager.shutdown()
+
+    @pytest.mark.asyncio
+    async def test_invoke_tool_plugin_retry_delay_triggers_retry(self, tool_service, mock_tool, mock_global_config_obj, test_db):
+        """Test that when plugin returns retry_delay_ms > 0 the tool is retried after the delay."""
+        mock_tool.integration_type = "REST"
+        mock_tool.request_type = "POST"
+        mock_tool.auth_value = None
+
+        setup_db_execute_mock(test_db, mock_tool, mock_global_config_obj)
+
+        mock_response = AsyncMock()
+        mock_response.raise_for_status = Mock()
+        mock_response.status_code = 200
+        mock_response.json = Mock(return_value={"result": "first attempt"})
+        tool_service._http_client.request.return_value = mock_response
+
+        tool_service._plugin_manager = Mock()
+
+        post_invoke_count = [0]
+
+        def invoke_hook_side_effect(hook_type, payload, global_context, local_contexts=None, **kwargs):
+            if hook_type == ToolHookType.TOOL_PRE_INVOKE:
+                return (PluginResult(continue_processing=True, violation=None, modified_payload=None), None)
+            # POST_INVOKE: first call requests a retry, subsequent calls succeed
+            post_invoke_count[0] += 1
+            delay = 100 if post_invoke_count[0] == 1 else 0
+            return (PluginResult(continue_processing=True, violation=None, modified_payload=None, retry_delay_ms=delay), None)
+
+        tool_service._plugin_manager.invoke_hook = AsyncMock(side_effect=invoke_hook_side_effect)
+
+        # Intercept the recursive retry call so it returns immediately on retry_attempt > 0
+        retry_result = ToolResult(content=[TextContent(type="text", text="retry succeeded")])
+        original_invoke = tool_service.invoke_tool
+
+        async def spy_invoke(db, name, arguments=None, **kwargs):
+            if kwargs.get("retry_attempt", 0) > 0:
+                return retry_result
+            return await original_invoke(db, name, arguments, **kwargs)
+
+        with (
+            patch("mcpgateway.services.tool_service.decode_auth", return_value={}),
+            patch("mcpgateway.services.tool_service.extract_using_jq", return_value={"result": "first attempt"}),
+            patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
+            patch.object(tool_service, "invoke_tool", side_effect=spy_invoke),
+        ):
+            result = await tool_service.invoke_tool(test_db, "test_tool", {"param": "value"}, request_headers=None)
+
+        # Verify the retry delay sleep was triggered
+        mock_sleep.assert_awaited_once()
+        assert mock_sleep.call_args[0][0] == pytest.approx(0.1)  # 100ms → 0.1s
+        # Verify the result is from the retry call
+        assert result.content[0].text == "retry succeeded"
+
+    @pytest.mark.asyncio
+    async def test_invoke_tool_exception_path_retry_fires(self, tool_service, mock_tool, mock_global_config_obj, test_db):
+        """When a tool raises an exception the retry plugin's delay_ms must also trigger a retry."""
+        mock_tool.integration_type = "REST"
+        mock_tool.request_type = "POST"
+        mock_tool.auth_value = None
+
+        setup_db_execute_mock(test_db, mock_tool, mock_global_config_obj)
+
+        # HTTP client raises an exception (simulates network error)
+        tool_service._http_client.request.side_effect = RuntimeError("connection reset")
+
+        tool_service._plugin_manager = Mock()
+        tool_service._plugin_manager.has_hooks_for.return_value = True
+
+        # Plugin returns delay > 0 on first post-invoke, 0 on subsequent
+        post_invoke_count = [0]
+
+        def invoke_hook_side_effect(hook_type, payload, global_context, local_contexts=None, **kwargs):
+            if hook_type == ToolHookType.TOOL_PRE_INVOKE:
+                return (PluginResult(continue_processing=True, violation=None, modified_payload=None), None)
+            post_invoke_count[0] += 1
+            delay = 50 if post_invoke_count[0] == 1 else 0
+            return (PluginResult(continue_processing=True, violation=None, modified_payload=None, retry_delay_ms=delay), None)
+
+        tool_service._plugin_manager.invoke_hook = AsyncMock(side_effect=invoke_hook_side_effect)
+
+        retry_result = ToolResult(content=[TextContent(type="text", text="recovered after exception")])
+        original_invoke = tool_service.invoke_tool
+
+        async def spy_invoke(db, name, arguments=None, **kwargs):
+            if kwargs.get("retry_attempt", 0) > 0:
+                return retry_result
+            return await original_invoke(db, name, arguments, **kwargs)
+
+        with (
+            patch("mcpgateway.services.tool_service.decode_auth", return_value={}),
+            patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
+            patch.object(tool_service, "invoke_tool", side_effect=spy_invoke),
+        ):
+            result = await tool_service.invoke_tool(test_db, "test_tool", {"param": "value"}, request_headers=None)
+
+        mock_sleep.assert_awaited_once()
+        assert mock_sleep.call_args[0][0] == pytest.approx(0.05)  # 50ms → 0.05s
+        assert result.content[0].text == "recovered after exception"
+
+    @pytest.mark.asyncio
+    async def test_invoke_tool_http_status_error_passes_status_to_plugin(self, tool_service, mock_tool, mock_global_config_obj, test_db):
+        """When raise_for_status() raises HTTPStatusError the status code must be forwarded to the plugin in structuredContent."""
+        import httpx
+
+        mock_tool.integration_type = "REST"
+        mock_tool.request_type = "POST"
+        mock_tool.auth_value = None
+
+        setup_db_execute_mock(test_db, mock_tool, mock_global_config_obj)
+
+        # Simulate httpx.HTTPStatusError (e.g. a 404 from raise_for_status)
+        mock_response = MagicMock()
+        mock_response.status_code = 404
+        mock_request = MagicMock()
+        tool_service._http_client.request.side_effect = httpx.HTTPStatusError("Not Found", request=mock_request, response=mock_response)
+
+        tool_service._plugin_manager = Mock()
+        tool_service._plugin_manager.has_hooks_for.return_value = True
+
+        captured_payloads = []
+
+        def invoke_hook_side_effect(hook_type, payload, global_context, local_contexts=None, **kwargs):
+            if hook_type == ToolHookType.TOOL_POST_INVOKE:
+                captured_payloads.append(payload)
+            return (PluginResult(continue_processing=True, violation=None, modified_payload=None, retry_delay_ms=0), None)
+
+        tool_service._plugin_manager.invoke_hook = AsyncMock(side_effect=invoke_hook_side_effect)
+
+        with patch("mcpgateway.services.tool_service.decode_auth", return_value={}):
+            with pytest.raises(ToolInvocationError):
+                await tool_service.invoke_tool(test_db, "test_tool", {"param": "value"}, request_headers=None)
+
+        # The exception-path post-invoke payload must include the HTTP status code in structuredContent
+        assert len(captured_payloads) >= 1
+        post_invoke_result = captured_payloads[-1].result
+        assert post_invoke_result["isError"] is True
+        assert post_invoke_result["structuredContent"] == {"status_code": 404}
+
+    @pytest.mark.asyncio
+    async def test_invoke_tool_timeout_path_retry_fires(self, tool_service, mock_tool, mock_global_config_obj, test_db):
+        """When a tool times out and the retry plugin requests a retry via ToolTimeoutError.retry_delay_ms, the gateway must retry."""
+        mock_tool.integration_type = "REST"
+        mock_tool.request_type = "POST"
+        mock_tool.auth_value = None
+
+        setup_db_execute_mock(test_db, mock_tool, mock_global_config_obj)
+
+        # HTTP client raises ToolTimeoutError with retry_delay_ms to simulate
+        # the timeout handler having already called _run_timeout_post_invoke.
+        tool_service._http_client.request.side_effect = ToolTimeoutError("timed out after 30s", retry_delay_ms=75)
+
+        tool_service._plugin_manager = Mock()
+        tool_service._plugin_manager.has_hooks_for.return_value = True
+
+        def invoke_hook_side_effect(hook_type, payload, global_context, local_contexts=None, **kwargs):
+            if hook_type == ToolHookType.TOOL_PRE_INVOKE:
+                return (PluginResult(continue_processing=True, violation=None, modified_payload=None), None)
+            return (PluginResult(continue_processing=True, violation=None, modified_payload=None, retry_delay_ms=0), None)
+
+        tool_service._plugin_manager.invoke_hook = AsyncMock(side_effect=invoke_hook_side_effect)
+
+        retry_result = ToolResult(content=[TextContent(type="text", text="recovered after timeout")])
+        original_invoke = tool_service.invoke_tool
+
+        async def spy_invoke(db, name, arguments=None, **kwargs):
+            if kwargs.get("retry_attempt", 0) > 0:
+                return retry_result
+            return await original_invoke(db, name, arguments, **kwargs)
+
+        with (
+            patch("mcpgateway.services.tool_service.decode_auth", return_value={}),
+            patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
+            patch.object(tool_service, "invoke_tool", side_effect=spy_invoke),
+        ):
+            result = await tool_service.invoke_tool(test_db, "test_tool", {"param": "value"}, request_headers=None)
+
+        mock_sleep.assert_awaited_once()
+        assert mock_sleep.call_args[0][0] == pytest.approx(0.075)  # 75ms → 0.075s
+        assert result.content[0].text == "recovered after timeout"
+
+    @pytest.mark.asyncio
+    async def test_invoke_tool_timeout_no_retry_reraises(self, tool_service, mock_tool, mock_global_config_obj, test_db):
+        """ToolTimeoutError with retry_delay_ms=0 must re-raise without retrying."""
+        mock_tool.integration_type = "REST"
+        mock_tool.request_type = "POST"
+        mock_tool.auth_value = None
+
+        setup_db_execute_mock(test_db, mock_tool, mock_global_config_obj)
+
+        tool_service._http_client.request.side_effect = ToolTimeoutError("timed out after 30s")
+
+        tool_service._plugin_manager = Mock()
+        tool_service._plugin_manager.has_hooks_for.return_value = True
+
+        def invoke_hook_side_effect(hook_type, payload, global_context, local_contexts=None, **kwargs):
+            if hook_type == ToolHookType.TOOL_PRE_INVOKE:
+                return (PluginResult(continue_processing=True, violation=None, modified_payload=None), None)
+            return (PluginResult(continue_processing=True, violation=None, modified_payload=None, retry_delay_ms=0), None)
+
+        tool_service._plugin_manager.invoke_hook = AsyncMock(side_effect=invoke_hook_side_effect)
+
+        with (
+            patch("mcpgateway.services.tool_service.decode_auth", return_value={}),
+            patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
+        ):
+            with pytest.raises(ToolTimeoutError):
+                await tool_service.invoke_tool(test_db, "test_tool", {"param": "value"}, request_headers=None)
+
+        mock_sleep.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_run_timeout_post_invoke_calls_hook(self, tool_service):
+        """_run_timeout_post_invoke must invoke the post-invoke hook when the plugin manager has hooks."""
+        tool_service._plugin_manager = Mock()
+        tool_service._plugin_manager.has_hooks_for.return_value = True
+        tool_service._plugin_manager.invoke_hook = AsyncMock(return_value=(PluginResult(retry_delay_ms=0), None))
+
+        await tool_service._run_timeout_post_invoke("test_tool", 30.0, None, None)
+
+        tool_service._plugin_manager.invoke_hook.assert_awaited_once()
+        call_kwargs = tool_service._plugin_manager.invoke_hook.call_args
+        assert call_kwargs[1]["payload"].name == "test_tool"
+        assert call_kwargs[1]["payload"].result["isError"] is True
+
+    @pytest.mark.asyncio
+    async def test_run_timeout_post_invoke_raises_on_retry_signal(self, tool_service):
+        """_run_timeout_post_invoke must raise ToolTimeoutError with retry_delay_ms when the plugin requests a retry."""
+        tool_service._plugin_manager = Mock()
+        tool_service._plugin_manager.has_hooks_for.return_value = True
+        tool_service._plugin_manager.invoke_hook = AsyncMock(return_value=(PluginResult(retry_delay_ms=250), None))
+
+        with pytest.raises(ToolTimeoutError) as exc_info:
+            await tool_service._run_timeout_post_invoke("test_tool", 30.0, None, None)
+
+        assert exc_info.value.retry_delay_ms == 250
+
+    @pytest.mark.asyncio
+    async def test_run_timeout_post_invoke_noop_without_plugin_manager(self, tool_service):
+        """_run_timeout_post_invoke must return immediately when plugin_manager is None."""
+        tool_service._plugin_manager = None
+        # Should not raise
+        await tool_service._run_timeout_post_invoke("test_tool", 30.0, None, None)
 
 
 # --------------------------------------------------------------------------- #
@@ -6655,9 +6931,7 @@ class TestRustMcpExecutionPlan:
     async def test_prepare_rust_mcp_tool_execution_post_invoke_hooks_force_fallback(self, tool_service):
         """Post-invoke hooks should force fallback even when pre-invoke hooks are also registered."""
         tool_service._plugin_manager = MagicMock()
-        tool_service._plugin_manager.has_hooks_for = MagicMock(
-            side_effect=lambda hook_type: hook_type in (ToolHookType.TOOL_PRE_INVOKE, ToolHookType.TOOL_POST_INVOKE)
-        )
+        tool_service._plugin_manager.has_hooks_for = MagicMock(side_effect=lambda hook_type: hook_type in (ToolHookType.TOOL_PRE_INVOKE, ToolHookType.TOOL_POST_INVOKE))
 
         with patch("mcpgateway.services.tool_service.current_trace_id", MagicMock(get=MagicMock(return_value=None))):
             plan = await tool_service.prepare_rust_mcp_tool_execution(MagicMock(), "tool-one")
@@ -7443,6 +7717,7 @@ class TestRustMcpExecutionPlan:
     @pytest.mark.asyncio
     async def test_prepare_rust_mcp_pre_invoke_only_returns_eligible_plan_with_hooks(self, tool_service):
         """Pre-invoke hooks only (no post-invoke) should produce eligible plan with hook results."""
+        # First-Party
         from mcpgateway.plugins.framework import HttpHeaderPayload, ToolPreInvokePayload
         from mcpgateway.plugins.framework.models import PluginResult
 
@@ -7450,9 +7725,7 @@ class TestRustMcpExecutionPlan:
 
         # Configure plugin manager: pre-invoke YES, post-invoke NO
         mock_pm = MagicMock()
-        mock_pm.has_hooks_for = MagicMock(
-            side_effect=lambda hook_type: hook_type == ToolHookType.TOOL_PRE_INVOKE
-        )
+        mock_pm.has_hooks_for = MagicMock(side_effect=lambda hook_type: hook_type == ToolHookType.TOOL_PRE_INVOKE)
 
         # Mock invoke_hook to return modified args and headers
         async def mock_invoke_hook(hook_type, payload, global_context, local_contexts=None, violations_as_exceptions=False):  # noqa: ARG001
@@ -7491,15 +7764,14 @@ class TestRustMcpExecutionPlan:
     @pytest.mark.asyncio
     async def test_prepare_rust_mcp_pre_invoke_hook_modifies_tool_name(self, tool_service):
         """Pre-invoke hook that renames tool should update remoteToolName in plan."""
+        # First-Party
         from mcpgateway.plugins.framework import ToolPreInvokePayload
         from mcpgateway.plugins.framework.models import PluginResult
 
         cache = self._cache_mock(self._cache_payload())
 
         mock_pm = MagicMock()
-        mock_pm.has_hooks_for = MagicMock(
-            side_effect=lambda hook_type: hook_type == ToolHookType.TOOL_PRE_INVOKE
-        )
+        mock_pm.has_hooks_for = MagicMock(side_effect=lambda hook_type: hook_type == ToolHookType.TOOL_PRE_INVOKE)
 
         async def mock_invoke_hook(hook_type, payload, global_context, local_contexts=None, violations_as_exceptions=False):  # noqa: ARG001
             modified = ToolPreInvokePayload(name="renamed-tool", args=payload.args)
@@ -7553,14 +7825,13 @@ class TestRustMcpExecutionPlan:
     @pytest.mark.asyncio
     async def test_prepare_rust_mcp_pre_invoke_passes_runtime_headers_not_request_headers(self, tool_service):
         """Pre-invoke hook should receive outbound runtime headers, not inbound request headers."""
+        # First-Party
         from mcpgateway.plugins.framework.models import PluginResult
 
         cache = self._cache_mock(self._cache_payload())
 
         mock_pm = MagicMock()
-        mock_pm.has_hooks_for = MagicMock(
-            side_effect=lambda hook_type: hook_type == ToolHookType.TOOL_PRE_INVOKE
-        )
+        mock_pm.has_hooks_for = MagicMock(side_effect=lambda hook_type: hook_type == ToolHookType.TOOL_PRE_INVOKE)
 
         received_headers = {}
 
@@ -7594,15 +7865,14 @@ class TestRustMcpExecutionPlan:
     @pytest.mark.asyncio
     async def test_prepare_rust_mcp_pre_invoke_receives_plugin_global_context(self, tool_service):
         """Pre-invoke hook should receive the middleware-provided GlobalContext, not a fresh one."""
+        # First-Party
         from mcpgateway.plugins.framework import GlobalContext
         from mcpgateway.plugins.framework.models import PluginResult
 
         cache = self._cache_mock(self._cache_payload())
 
         mock_pm = MagicMock()
-        mock_pm.has_hooks_for = MagicMock(
-            side_effect=lambda hook_type: hook_type == ToolHookType.TOOL_PRE_INVOKE
-        )
+        mock_pm.has_hooks_for = MagicMock(side_effect=lambda hook_type: hook_type == ToolHookType.TOOL_PRE_INVOKE)
 
         received_context = {}
 
@@ -7645,6 +7915,113 @@ class TestRustMcpExecutionPlan:
         assert received_context["state"]["jwt_claims"]["sub"] == "jwt-user@example.com"
         # Prior context table should be passed through
         assert received_context["local_contexts"] == provided_context_table
+
+    @pytest.mark.asyncio
+    async def test_prepare_rust_mcp_pre_invoke_injects_user_into_global_context(self, tool_service):
+        """Pre-invoke hook should populate global_context.user from app_user_email when the provided context has no user."""
+        # First-Party
+        from mcpgateway.plugins.framework import GlobalContext
+        from mcpgateway.plugins.framework.models import PluginResult
+
+        cache = self._cache_mock(self._cache_payload())
+
+        received_context = {}
+
+        mock_pm = MagicMock()
+        mock_pm.has_hooks_for = MagicMock(side_effect=lambda hook_type: hook_type == ToolHookType.TOOL_PRE_INVOKE)
+
+        async def mock_invoke_hook(hook_type, payload, global_context, local_contexts=None, violations_as_exceptions=False):  # noqa: ARG001
+            received_context["user"] = global_context.user
+            return PluginResult(continue_processing=True), {}
+
+        mock_pm.invoke_hook = mock_invoke_hook
+        tool_service._plugin_manager = mock_pm
+
+        # Provide a context with user=None so the fallback injection fires
+        provided_ctx = GlobalContext(request_id="corr-456", server_id="srv-1", tenant_id=None, user=None)
+
+        with (
+            patch("mcpgateway.services.tool_service._get_tool_lookup_cache", return_value=cache),
+            patch("mcpgateway.services.tool_service.current_trace_id", MagicMock(get=MagicMock(return_value=None))),
+            patch("mcpgateway.services.tool_service.global_config_cache", MagicMock(get_passthrough_headers=MagicMock(return_value=[]))),
+            patch("mcpgateway.services.tool_service.compute_passthrough_headers_cached", return_value={}),
+            patch.object(tool_service, "_check_tool_access", AsyncMock(return_value=True)),
+        ):
+            await tool_service.prepare_rust_mcp_tool_execution(
+                MagicMock(),
+                "tool-one",
+                arguments={"key": "val"},
+                app_user_email="injected-user@example.com",
+                user_email="user@example.com",
+                token_teams=["team-a"],
+                plugin_global_context=provided_ctx,
+            )
+
+        assert received_context["user"] == "injected-user@example.com"
+
+    @pytest.mark.asyncio
+    async def test_prepare_rust_mcp_pre_invoke_injects_tool_and_gateway_metadata(self, tool_service):
+        """Pre-invoke hook should inject PydanticTool and PydanticGateway metadata into global context."""
+        # First-Party
+        from mcpgateway.plugins.framework import GlobalContext
+        from mcpgateway.plugins.framework.constants import GATEWAY_METADATA, TOOL_METADATA
+        from mcpgateway.plugins.framework.models import PluginResult
+
+        # Supply fields required by PydanticTool (url) and PydanticGateway
+        # (id, slug, transport, capabilities, last_seen) so model_validate succeeds.
+        cache = self._cache_mock(
+            self._cache_payload(
+                url="http://gateway.example/mcp",
+                gateway={
+                    "id": "gw-1",
+                    "slug": "gateway-one",
+                    "transport": "streamablehttp",
+                    "capabilities": {},
+                    "last_seen": None,
+                },
+            )
+        )
+
+        received_metadata = {}
+
+        mock_pm = MagicMock()
+        mock_pm.has_hooks_for = MagicMock(side_effect=lambda hook_type: hook_type == ToolHookType.TOOL_PRE_INVOKE)
+
+        async def mock_invoke_hook(hook_type, payload, global_context, local_contexts=None, violations_as_exceptions=False):  # noqa: ARG001
+            received_metadata["keys"] = list(global_context.metadata.keys())
+            received_metadata["has_tool"] = TOOL_METADATA in global_context.metadata
+            received_metadata["has_gateway"] = GATEWAY_METADATA in global_context.metadata
+            if received_metadata["has_tool"]:
+                received_metadata["tool_name"] = global_context.metadata[TOOL_METADATA].name
+            if received_metadata["has_gateway"]:
+                received_metadata["gateway_name"] = global_context.metadata[GATEWAY_METADATA].name
+            return PluginResult(continue_processing=True), {}
+
+        mock_pm.invoke_hook = mock_invoke_hook
+        tool_service._plugin_manager = mock_pm
+
+        provided_ctx = GlobalContext(request_id="corr-789", server_id=None, tenant_id=None, user="user@example.com")
+
+        with (
+            patch("mcpgateway.services.tool_service._get_tool_lookup_cache", return_value=cache),
+            patch("mcpgateway.services.tool_service.current_trace_id", MagicMock(get=MagicMock(return_value=None))),
+            patch("mcpgateway.services.tool_service.global_config_cache", MagicMock(get_passthrough_headers=MagicMock(return_value=[]))),
+            patch("mcpgateway.services.tool_service.compute_passthrough_headers_cached", return_value={}),
+            patch.object(tool_service, "_check_tool_access", AsyncMock(return_value=True)),
+        ):
+            await tool_service.prepare_rust_mcp_tool_execution(
+                MagicMock(),
+                "tool-one",
+                arguments={"key": "val"},
+                user_email="user@example.com",
+                token_teams=["team-a"],
+                plugin_global_context=provided_ctx,
+            )
+
+        assert received_metadata["has_tool"] is True
+        assert received_metadata["has_gateway"] is True
+        assert received_metadata["tool_name"] == "tool-one"
+        assert received_metadata["gateway_name"] == "gateway-one"
 
     @pytest.mark.asyncio
     async def test_invoke_tool_header_gateway_not_found(self, tool_service, test_db):
