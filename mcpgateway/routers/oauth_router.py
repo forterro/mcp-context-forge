@@ -585,8 +585,7 @@ async def oauth_callback(
                 return response
 
         # Return success page with option to return to admin
-        return HTMLResponse(
-            content=f"""
+        return HTMLResponse(content=f"""
         <!DOCTYPE html>
         <html>
         <head>
@@ -638,7 +637,7 @@ async def oauth_callback(
                 statusDiv.innerHTML = '<p style="color: #2563eb;">Fetching tools from MCP server...</p>';
 
                 try {{
-                    const response = await fetch('{safe_root_path}/oauth/fetch-tools/{escape(str(gateway_id))}', {{
+                    const response = await fetch('{safe_root_path}/oauth/fetch-tools/{escape(str(gateway_id), quote=True)}', {{
                         method: 'POST',
                         credentials: 'include',
                         headers: {{ 'Accept': 'text/html' }}
@@ -674,8 +673,7 @@ async def oauth_callback(
             </script>
         </body>
         </html>
-        """
-        )
+        """)
 
     except OAuthError as e:
         logger.error(f"OAuth callback failed: {str(e)}")
