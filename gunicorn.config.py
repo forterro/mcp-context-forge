@@ -127,6 +127,21 @@ def post_fork(server, worker):
     except ImportError:
         pass
 
+    # Re-apply httpx instrumentation in each worker process.
+    # With preload_app=True, wrap_function_wrapper patches made in the master
+    # process do not survive fork() — each worker needs its own monkey-patch.
+    try:
+        from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
+
+        instrumentor = HTTPXClientInstrumentor()
+        if not instrumentor.is_instrumented_by_opentelemetry:
+            instrumentor.instrument()
+            server.log.info("Worker %s: httpx instrumentation applied", worker.pid)
+    except ImportError:
+        pass
+    except Exception as e:
+        server.log.warning("Worker %s: failed to instrument httpx: %s", worker.pid, e)
+
 
 def post_worker_init(worker):
     worker.log.info("worker initialization completed")
