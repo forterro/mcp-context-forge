@@ -84,21 +84,24 @@ if (!window.getChartDefaults) {
                 const temp = document.createElement('div');
                 temp.innerHTML = html;
 
-                // Extract and execute scripts BEFORE inserting into live DOM
+                // Execute inline scripts synchronously via indirect eval (global scope)
+                // NOTE: document.head.appendChild(scriptEl) doesn't reliably execute
+                // inline scripts in dynamically-loaded HTML; (0,eval)() is guaranteed synchronous
                 const scripts = temp.querySelectorAll('script');
                 scripts.forEach(script => {
-                    const newScript = document.createElement('script');
                     if (script.src) {
+                        const newScript = document.createElement('script');
                         newScript.src = script.src;
-                    } else {
-                        newScript.textContent = script.textContent;
+                        document.head.appendChild(newScript);
+                    } else if (script.textContent.trim()) {
+                        try {
+                            (0, eval)(script.textContent);
+                        } catch (e) {
+                            console.error('Script execution error:', e);
+                        }
                     }
                     script.remove();
-                    document.head.appendChild(newScript);
                 });
-
-                // Wait for scripts to define controller functions
-                await new Promise(resolve => setTimeout(resolve, 100));
 
                 // Insert HTML with Alpine MutationObserver disabled to prevent
                 // auto-initialization before initTree is called explicitly
@@ -164,21 +167,24 @@ if (!window.getChartDefaults) {
                 const temp = document.createElement('div');
                 temp.innerHTML = html;
 
-                // Extract and execute scripts BEFORE inserting into live DOM
+                // Execute inline scripts synchronously via indirect eval (global scope)
+                // NOTE: document.head.appendChild(scriptEl) doesn't reliably execute
+                // inline scripts in dynamically-loaded HTML; (0,eval)() is guaranteed synchronous
                 const scripts = temp.querySelectorAll('script');
                 scripts.forEach(script => {
-                    const newScript = document.createElement('script');
                     if (script.src) {
+                        const newScript = document.createElement('script');
                         newScript.src = script.src;
-                    } else {
-                        newScript.textContent = script.textContent;
+                        document.head.appendChild(newScript);
+                    } else if (script.textContent.trim()) {
+                        try {
+                            (0, eval)(script.textContent);
+                        } catch (e) {
+                            console.error('Script execution error:', e);
+                        }
                     }
                     script.remove();
-                    document.head.appendChild(newScript);
                 });
-
-                // Wait for scripts to define controller functions
-                await new Promise(resolve => setTimeout(resolve, 100));
 
                 // Insert HTML with Alpine MutationObserver disabled to prevent
                 // auto-initialization before initTree is called explicitly
@@ -244,21 +250,24 @@ if (!window.getChartDefaults) {
                 const temp = document.createElement('div');
                 temp.innerHTML = html;
 
-                // Extract and execute scripts BEFORE inserting into live DOM
+                // Execute inline scripts synchronously via indirect eval (global scope)
+                // NOTE: document.head.appendChild(scriptEl) doesn't reliably execute
+                // inline scripts in dynamically-loaded HTML; (0,eval)() is guaranteed synchronous
                 const scripts = temp.querySelectorAll('script');
                 scripts.forEach(script => {
-                    const newScript = document.createElement('script');
                     if (script.src) {
+                        const newScript = document.createElement('script');
                         newScript.src = script.src;
-                    } else {
-                        newScript.textContent = script.textContent;
+                        document.head.appendChild(newScript);
+                    } else if (script.textContent.trim()) {
+                        try {
+                            (0, eval)(script.textContent);
+                        } catch (e) {
+                            console.error('Script execution error:', e);
+                        }
                     }
                     script.remove();
-                    document.head.appendChild(newScript);
                 });
-
-                // Wait for scripts to define controller functions
-                await new Promise(resolve => setTimeout(resolve, 100));
 
                 // Insert HTML with Alpine MutationObserver disabled to prevent
                 // auto-initialization before initTree is called explicitly
@@ -324,21 +333,24 @@ if (!window.getChartDefaults) {
                 const temp = document.createElement('div');
                 temp.innerHTML = html;
 
-                // Extract and execute scripts BEFORE inserting into live DOM
+                // Execute inline scripts synchronously via indirect eval (global scope)
+                // NOTE: document.head.appendChild(scriptEl) doesn't reliably execute
+                // inline scripts in dynamically-loaded HTML; (0,eval)() is guaranteed synchronous
                 const scripts = temp.querySelectorAll('script');
                 scripts.forEach(script => {
-                    const newScript = document.createElement('script');
                     if (script.src) {
+                        const newScript = document.createElement('script');
                         newScript.src = script.src;
-                    } else {
-                        newScript.textContent = script.textContent;
+                        document.head.appendChild(newScript);
+                    } else if (script.textContent.trim()) {
+                        try {
+                            (0, eval)(script.textContent);
+                        } catch (e) {
+                            console.error('Script execution error:', e);
+                        }
                     }
                     script.remove();
-                    document.head.appendChild(newScript);
                 });
-
-                // Wait for scripts to define controller functions
-                await new Promise(resolve => setTimeout(resolve, 100));
 
                 // Insert HTML with Alpine MutationObserver disabled to prevent
                 // auto-initialization before initTree is called explicitly
