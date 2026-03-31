@@ -100,12 +100,15 @@ if (!window.getChartDefaults) {
                 // Wait for scripts to define controller functions
                 await new Promise(resolve => setTimeout(resolve, 100));
 
-                // Now insert the HTML (without scripts) into the live DOM
-                container.innerHTML = temp.innerHTML;
-
-                // Initialize Alpine.js on the new content
+                // Insert HTML with Alpine MutationObserver disabled to prevent
+                // auto-initialization before initTree is called explicitly
                 if (window.Alpine) {
+                    window.Alpine.mutateDom(() => {
+                        container.innerHTML = temp.innerHTML;
+                    });
                     window.Alpine.initTree(container);
+                } else {
+                    container.innerHTML = temp.innerHTML;
                 }
 
                 // Only mark as loaded if we're still on the metrics view
@@ -177,12 +180,15 @@ if (!window.getChartDefaults) {
                 // Wait for scripts to define controller functions
                 await new Promise(resolve => setTimeout(resolve, 100));
 
-                // Now insert the HTML (without scripts) into the live DOM
-                container.innerHTML = temp.innerHTML;
-
-                // Initialize Alpine.js on the new content
+                // Insert HTML with Alpine MutationObserver disabled to prevent
+                // auto-initialization before initTree is called explicitly
                 if (window.Alpine) {
+                    window.Alpine.mutateDom(() => {
+                        container.innerHTML = temp.innerHTML;
+                    });
                     window.Alpine.initTree(container);
+                } else {
+                    container.innerHTML = temp.innerHTML;
                 }
 
                 // Only mark as loaded if we're still on the tools view
@@ -254,12 +260,15 @@ if (!window.getChartDefaults) {
                 // Wait for scripts to define controller functions
                 await new Promise(resolve => setTimeout(resolve, 100));
 
-                // Now insert the HTML (without scripts) into the live DOM
-                container.innerHTML = temp.innerHTML;
-
-                // Initialize Alpine.js on the new content
+                // Insert HTML with Alpine MutationObserver disabled to prevent
+                // auto-initialization before initTree is called explicitly
                 if (window.Alpine) {
+                    window.Alpine.mutateDom(() => {
+                        container.innerHTML = temp.innerHTML;
+                    });
                     window.Alpine.initTree(container);
+                } else {
+                    container.innerHTML = temp.innerHTML;
                 }
 
                 // Only mark as loaded if we're still on the prompts view
@@ -331,12 +340,15 @@ if (!window.getChartDefaults) {
                 // Wait for scripts to define controller functions
                 await new Promise(resolve => setTimeout(resolve, 100));
 
-                // Now insert the HTML (without scripts) into the live DOM
-                container.innerHTML = temp.innerHTML;
-
-                // Initialize Alpine.js on the new content
+                // Insert HTML with Alpine MutationObserver disabled to prevent
+                // auto-initialization before initTree is called explicitly
                 if (window.Alpine) {
+                    window.Alpine.mutateDom(() => {
+                        container.innerHTML = temp.innerHTML;
+                    });
                     window.Alpine.initTree(container);
+                } else {
+                    container.innerHTML = temp.innerHTML;
                 }
 
                 // Only mark as loaded if we're still on the resources view
