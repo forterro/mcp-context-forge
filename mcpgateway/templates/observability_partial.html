@@ -79,10 +79,13 @@ if (!window.getChartDefaults) {
                     return;
                 }
 
-                container.innerHTML = html;
+                // Parse HTML in a detached element to avoid Alpine MutationObserver
+                // firing before scripts are executed
+                const temp = document.createElement('div');
+                temp.innerHTML = html;
 
-                // Execute any script tags (innerHTML doesn't execute them)
-                const scripts = container.querySelectorAll('script');
+                // Extract and execute scripts BEFORE inserting into live DOM
+                const scripts = temp.querySelectorAll('script');
                 scripts.forEach(script => {
                     const newScript = document.createElement('script');
                     if (script.src) {
@@ -90,13 +93,17 @@ if (!window.getChartDefaults) {
                     } else {
                         newScript.textContent = script.textContent;
                     }
+                    script.remove();
                     document.head.appendChild(newScript);
                 });
 
-                // Wait for scripts to execute and charts to render
+                // Wait for scripts to define controller functions
                 await new Promise(resolve => setTimeout(resolve, 100));
 
-                // Re-initialize Alpine.js
+                // Now insert the HTML (without scripts) into the live DOM
+                container.innerHTML = temp.innerHTML;
+
+                // Initialize Alpine.js on the new content
                 if (window.Alpine) {
                     window.Alpine.initTree(container);
                 }
@@ -149,10 +156,13 @@ if (!window.getChartDefaults) {
                     return;
                 }
 
-                container.innerHTML = html;
+                // Parse HTML in a detached element to avoid Alpine MutationObserver
+                // firing before scripts are executed
+                const temp = document.createElement('div');
+                temp.innerHTML = html;
 
-                // Execute any script tags (innerHTML doesn't execute them)
-                const scripts = container.querySelectorAll('script');
+                // Extract and execute scripts BEFORE inserting into live DOM
+                const scripts = temp.querySelectorAll('script');
                 scripts.forEach(script => {
                     const newScript = document.createElement('script');
                     if (script.src) {
@@ -160,13 +170,17 @@ if (!window.getChartDefaults) {
                     } else {
                         newScript.textContent = script.textContent;
                     }
+                    script.remove();
                     document.head.appendChild(newScript);
                 });
 
-                // Wait for scripts to execute and charts to render
+                // Wait for scripts to define controller functions
                 await new Promise(resolve => setTimeout(resolve, 100));
 
-                // Re-initialize Alpine.js
+                // Now insert the HTML (without scripts) into the live DOM
+                container.innerHTML = temp.innerHTML;
+
+                // Initialize Alpine.js on the new content
                 if (window.Alpine) {
                     window.Alpine.initTree(container);
                 }
@@ -219,10 +233,13 @@ if (!window.getChartDefaults) {
                     return;
                 }
 
-                container.innerHTML = html;
+                // Parse HTML in a detached element to avoid Alpine MutationObserver
+                // firing before scripts are executed
+                const temp = document.createElement('div');
+                temp.innerHTML = html;
 
-                // Execute any script tags (innerHTML doesn't execute them)
-                const scripts = container.querySelectorAll('script');
+                // Extract and execute scripts BEFORE inserting into live DOM
+                const scripts = temp.querySelectorAll('script');
                 scripts.forEach(script => {
                     const newScript = document.createElement('script');
                     if (script.src) {
@@ -230,13 +247,17 @@ if (!window.getChartDefaults) {
                     } else {
                         newScript.textContent = script.textContent;
                     }
+                    script.remove();
                     document.head.appendChild(newScript);
                 });
 
-                // Wait for scripts to execute and charts to render
+                // Wait for scripts to define controller functions
                 await new Promise(resolve => setTimeout(resolve, 100));
 
-                // Re-initialize Alpine.js
+                // Now insert the HTML (without scripts) into the live DOM
+                container.innerHTML = temp.innerHTML;
+
+                // Initialize Alpine.js on the new content
                 if (window.Alpine) {
                     window.Alpine.initTree(container);
                 }
@@ -289,10 +310,13 @@ if (!window.getChartDefaults) {
                     return;
                 }
 
-                container.innerHTML = html;
+                // Parse HTML in a detached element to avoid Alpine MutationObserver
+                // firing before scripts are executed
+                const temp = document.createElement('div');
+                temp.innerHTML = html;
 
-                // Execute any script tags (innerHTML doesn't execute them)
-                const scripts = container.querySelectorAll('script');
+                // Extract and execute scripts BEFORE inserting into live DOM
+                const scripts = temp.querySelectorAll('script');
                 scripts.forEach(script => {
                     const newScript = document.createElement('script');
                     if (script.src) {
@@ -300,13 +324,17 @@ if (!window.getChartDefaults) {
                     } else {
                         newScript.textContent = script.textContent;
                     }
+                    script.remove();
                     document.head.appendChild(newScript);
                 });
 
-                // Wait for scripts to execute
+                // Wait for scripts to define controller functions
                 await new Promise(resolve => setTimeout(resolve, 100));
 
-                // Re-initialize Alpine.js
+                // Now insert the HTML (without scripts) into the live DOM
+                container.innerHTML = temp.innerHTML;
+
+                // Initialize Alpine.js on the new content
                 if (window.Alpine) {
                     window.Alpine.initTree(container);
                 }
