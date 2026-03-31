@@ -13,7 +13,29 @@ if (!window.getChartDefaults) {
     };
   };
 }
-</script>
+/**
+ * Execute <script> blocks from raw HTML text and return clean HTML.
+ * Uses regex to extract scripts (avoids DOM innerHTML parsing issues)
+ * and document.createElement('script') for reliable execution.
+ */
+window.__obsExecAndStrip = function(html) {
+  var scriptRe = new RegExp('<' + 'script\\b[^>]*>([\\s\\S]*?)</' + 'script>', 'gi');
+  var m;
+  while ((m = scriptRe.exec(html)) !== null) {
+    var code = m[1].trim();
+    if (code) {
+      try {
+        var s = document.createElement('script');
+        s.text = code;
+        document.head.appendChild(s);
+        s.remove();
+      } catch (e) {
+        console.error('[obs] script exec error:', e);
+      }
+    }
+  }
+  return html.replace(new RegExp('<' + 'script\\b[^>]*>[\\s\\S]*?</' + 'script>', 'gi'), '');
+};</script>
 <div class="observability-container" x-data="{
     viewMode: 'traces',
     selectedTrace: null,
@@ -79,39 +101,19 @@ if (!window.getChartDefaults) {
                     return;
                 }
 
-                // Parse HTML in a detached element to avoid Alpine MutationObserver
-                // firing before scripts are executed
-                const temp = document.createElement('div');
-                temp.innerHTML = html;
+                // Extract scripts from raw text and execute synchronously,
+                // then get clean HTML without <script> tags
+                const cleanHtml = window.__obsExecAndStrip(html);
 
-                // Execute inline scripts synchronously via indirect eval (global scope)
-                // NOTE: document.head.appendChild(scriptEl) doesn't reliably execute
-                // inline scripts in dynamically-loaded HTML; (0,eval)() is guaranteed synchronous
-                const scripts = temp.querySelectorAll('script');
-                scripts.forEach(script => {
-                    if (script.src) {
-                        const newScript = document.createElement('script');
-                        newScript.src = script.src;
-                        document.head.appendChild(newScript);
-                    } else if (script.textContent.trim()) {
-                        try {
-                            (0, eval)(script.textContent);
-                        } catch (e) {
-                            console.error('Script execution error:', e);
-                        }
-                    }
-                    script.remove();
-                });
-
-                // Insert HTML with Alpine MutationObserver disabled to prevent
-                // auto-initialization before initTree is called explicitly
+                // Insert script-free HTML with Alpine MutationObserver disabled,
+                // then explicitly initialize Alpine components
                 if (window.Alpine) {
                     window.Alpine.mutateDom(() => {
-                        container.innerHTML = temp.innerHTML;
+                        container.innerHTML = cleanHtml;
                     });
                     window.Alpine.initTree(container);
                 } else {
-                    container.innerHTML = temp.innerHTML;
+                    container.innerHTML = cleanHtml;
                 }
 
                 // Only mark as loaded if we're still on the metrics view
@@ -162,39 +164,15 @@ if (!window.getChartDefaults) {
                     return;
                 }
 
-                // Parse HTML in a detached element to avoid Alpine MutationObserver
-                // firing before scripts are executed
-                const temp = document.createElement('div');
-                temp.innerHTML = html;
+                const cleanHtml = window.__obsExecAndStrip(html);
 
-                // Execute inline scripts synchronously via indirect eval (global scope)
-                // NOTE: document.head.appendChild(scriptEl) doesn't reliably execute
-                // inline scripts in dynamically-loaded HTML; (0,eval)() is guaranteed synchronous
-                const scripts = temp.querySelectorAll('script');
-                scripts.forEach(script => {
-                    if (script.src) {
-                        const newScript = document.createElement('script');
-                        newScript.src = script.src;
-                        document.head.appendChild(newScript);
-                    } else if (script.textContent.trim()) {
-                        try {
-                            (0, eval)(script.textContent);
-                        } catch (e) {
-                            console.error('Script execution error:', e);
-                        }
-                    }
-                    script.remove();
-                });
-
-                // Insert HTML with Alpine MutationObserver disabled to prevent
-                // auto-initialization before initTree is called explicitly
                 if (window.Alpine) {
                     window.Alpine.mutateDom(() => {
-                        container.innerHTML = temp.innerHTML;
+                        container.innerHTML = cleanHtml;
                     });
                     window.Alpine.initTree(container);
                 } else {
-                    container.innerHTML = temp.innerHTML;
+                    container.innerHTML = cleanHtml;
                 }
 
                 // Only mark as loaded if we're still on the tools view
@@ -245,39 +223,15 @@ if (!window.getChartDefaults) {
                     return;
                 }
 
-                // Parse HTML in a detached element to avoid Alpine MutationObserver
-                // firing before scripts are executed
-                const temp = document.createElement('div');
-                temp.innerHTML = html;
+                const cleanHtml = window.__obsExecAndStrip(html);
 
-                // Execute inline scripts synchronously via indirect eval (global scope)
-                // NOTE: document.head.appendChild(scriptEl) doesn't reliably execute
-                // inline scripts in dynamically-loaded HTML; (0,eval)() is guaranteed synchronous
-                const scripts = temp.querySelectorAll('script');
-                scripts.forEach(script => {
-                    if (script.src) {
-                        const newScript = document.createElement('script');
-                        newScript.src = script.src;
-                        document.head.appendChild(newScript);
-                    } else if (script.textContent.trim()) {
-                        try {
-                            (0, eval)(script.textContent);
-                        } catch (e) {
-                            console.error('Script execution error:', e);
-                        }
-                    }
-                    script.remove();
-                });
-
-                // Insert HTML with Alpine MutationObserver disabled to prevent
-                // auto-initialization before initTree is called explicitly
                 if (window.Alpine) {
                     window.Alpine.mutateDom(() => {
-                        container.innerHTML = temp.innerHTML;
+                        container.innerHTML = cleanHtml;
                     });
                     window.Alpine.initTree(container);
                 } else {
-                    container.innerHTML = temp.innerHTML;
+                    container.innerHTML = cleanHtml;
                 }
 
                 // Only mark as loaded if we're still on the prompts view
@@ -328,39 +282,15 @@ if (!window.getChartDefaults) {
                     return;
                 }
 
-                // Parse HTML in a detached element to avoid Alpine MutationObserver
-                // firing before scripts are executed
-                const temp = document.createElement('div');
-                temp.innerHTML = html;
+                const cleanHtml = window.__obsExecAndStrip(html);
 
-                // Execute inline scripts synchronously via indirect eval (global scope)
-                // NOTE: document.head.appendChild(scriptEl) doesn't reliably execute
-                // inline scripts in dynamically-loaded HTML; (0,eval)() is guaranteed synchronous
-                const scripts = temp.querySelectorAll('script');
-                scripts.forEach(script => {
-                    if (script.src) {
-                        const newScript = document.createElement('script');
-                        newScript.src = script.src;
-                        document.head.appendChild(newScript);
-                    } else if (script.textContent.trim()) {
-                        try {
-                            (0, eval)(script.textContent);
-                        } catch (e) {
-                            console.error('Script execution error:', e);
-                        }
-                    }
-                    script.remove();
-                });
-
-                // Insert HTML with Alpine MutationObserver disabled to prevent
-                // auto-initialization before initTree is called explicitly
                 if (window.Alpine) {
                     window.Alpine.mutateDom(() => {
-                        container.innerHTML = temp.innerHTML;
+                        container.innerHTML = cleanHtml;
                     });
                     window.Alpine.initTree(container);
                 } else {
-                    container.innerHTML = temp.innerHTML;
+                    container.innerHTML = cleanHtml;
                 }
 
                 // Only mark as loaded if we're still on the resources view
