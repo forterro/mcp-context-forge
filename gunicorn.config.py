@@ -128,15 +128,17 @@ def post_fork(server, worker):
         pass
 
     # Re-apply httpx instrumentation in each worker process.
-    # With preload_app=True, wrap_function_wrapper patches made in the master
-    # process do not survive fork() — each worker needs its own monkey-patch.
+    # With preload_app=True, the master process sets _is_instrumented_by_opentelemetry=True
+    # and applies wrap_function_wrapper patches. After fork(), workers inherit the flag
+    # but NOT the monkey-patches. We must uninstrument (reset the flag) then re-instrument.
     try:
         from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
 
         instrumentor = HTTPXClientInstrumentor()
-        if not instrumentor.is_instrumented_by_opentelemetry:
-            instrumentor.instrument()
-            server.log.info("Worker %s: httpx instrumentation applied", worker.pid)
+        if instrumentor.is_instrumented_by_opentelemetry:
+            instrumentor.uninstrument()
+        instrumentor.instrument()
+        server.log.info("Worker %s: httpx instrumentation applied", worker.pid)
     except ImportError:
         pass
     except Exception as e:
