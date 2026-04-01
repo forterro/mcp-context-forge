@@ -1546,7 +1546,7 @@ class MetaServerService:
                         trace_id=trace_id,
                         name="prompt.render",
                         attributes={
-                            "prompt.name": name,
+                            "prompt.id": name,
                             "arguments_count": len(prompt_args) if prompt_args else 0,
                             "user": kwargs.get("user_email", "anonymous"),
                         },
