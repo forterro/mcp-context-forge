@@ -39,6 +39,7 @@ from mcpgateway.common.models import Message, PromptResult, Role, TextContent
 from mcpgateway.config import settings
 from mcpgateway.db import EmailTeam
 from mcpgateway.db import EmailTeamMember as DbEmailTeamMember
+from mcpgateway.db import fresh_db_session
 from mcpgateway.db import Gateway as DbGateway
 from mcpgateway.db import get_for_update
 from mcpgateway.db import Prompt as DbPrompt
@@ -1821,19 +1822,22 @@ class PromptService(BaseService):
 
         if trace_id and observability_service:
             try:
-                db_span_id = observability_service.start_span(
-                    db=db,
-                    trace_id=trace_id,
-                    name="prompt.render",
-                    attributes={
-                        "prompt.id": str(prompt_id),
-                        "arguments_count": len(arguments) if arguments else 0,
-                        "user": user or "anonymous",
-                        "server_id": server_id,
-                        "tenant_id": tenant_id,
-                        "request_id": request_id or "none",
-                    },
-                )
+                # Use fresh_db_session() to avoid transaction conflicts with handler's db session
+                with fresh_db_session() as span_db:
+                    db_span_id = observability_service.start_span(
+                        db=span_db,
+                        trace_id=trace_id,
+                        name="prompt.render",
+                        attributes={
+                            "prompt.id": str(prompt_id),
+                            "arguments_count": len(arguments) if arguments else 0,
+                            "user": user or "anonymous",
+                            "server_id": server_id,
+                            "tenant_id": tenant_id,
+                            "request_id": request_id or "none",
+                        },
+                        commit=False,
+                    )
                 logger.debug(f"✓ Created prompt.render span: {db_span_id} for prompt: {prompt_id}")
             except Exception as e:
                 logger.warning(f"Failed to start observability span for prompt rendering: {e}")
@@ -2063,12 +2067,14 @@ class PromptService(BaseService):
                 # End database span for observability dashboard
                 if db_span_id and observability_service and not db_span_ended:
                     try:
-                        observability_service.end_span(
-                            db=db,
-                            span_id=db_span_id,
-                            status="ok" if success else "error",
-                            status_message=error_message if error_message else None,
-                        )
+                        with fresh_db_session() as span_db:
+                            observability_service.end_span(
+                                db=span_db,
+                                span_id=db_span_id,
+                                status="ok" if success else "error",
+                                status_message=error_message if error_message else None,
+                                commit=False,
+                            )
                         db_span_ended = True
                         logger.debug(f"✓ Ended prompt.render span: {db_span_id}")
                     except Exception as e:
