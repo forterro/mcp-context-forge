@@ -14,6 +14,7 @@ import uuid
 
 # Third-Party
 import jsonschema
+import orjson
 from sqlalchemy import select
 from sqlalchemy.orm import joinedload, Session
 
@@ -197,6 +198,8 @@ class MetaToolService:
                     first_content = tool_result.content[0]
                     if hasattr(first_content, "text"):
                         result_data = first_content.text
+                    elif hasattr(first_content, "model_dump"):
+                        result_data = orjson.dumps(first_content.model_dump(by_alias=True, mode="json")).decode()
                     else:
                         result_data = str(first_content)
                 else:
