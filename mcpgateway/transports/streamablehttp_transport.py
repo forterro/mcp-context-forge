@@ -1192,7 +1192,7 @@ async def call_tool(name: str, arguments: dict) -> Union[
             token_teams=token_teams,
             request_headers=request_headers,
         )
-        return [types.TextContent(type="text", text=str(result_data))]
+        return [types.TextContent(type="text", text=orjson.dumps(result_data).decode())]
 
     # Check if we're in direct_proxy mode by looking for X-Context-Forge-Gateway-Id header
     gateway_id_from_header = extract_gateway_id_from_headers(request_headers)
