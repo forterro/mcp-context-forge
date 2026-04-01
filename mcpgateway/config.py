@@ -1278,6 +1278,7 @@ class Settings(BaseSettings):
             r"^/servers/[^/]+/sse$",
             r"^/servers/[^/]+/message$",
             r"^/a2a(?:/|$)",
+            r"^/_internal/mcp(?:/|$)",
         ],
         description="Regex patterns to include for tracing (when empty, all paths are eligible before excludes)",
     )
