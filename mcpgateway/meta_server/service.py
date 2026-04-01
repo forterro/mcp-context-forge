@@ -32,13 +32,14 @@ Examples:
 import fnmatch
 import logging
 import re
+import time
 from typing import Any, Dict, List, Optional, Set
 
 # Third-Party
 from sqlalchemy import or_
 
 # First-Party
-from mcpgateway.db import get_db, Tool, ToolEmbedding
+from mcpgateway.db import fresh_db_session, get_db, Tool, ToolEmbedding
 from mcpgateway.meta_server.schemas import (
     AuthorizeAllGatewaysResponse,
     AuthorizeGatewayResponse,
@@ -1345,6 +1346,7 @@ class MetaServerService:
             ReadResourceResponse as dict with content.
         """
         from mcpgateway.db import Resource  # pylint: disable=import-outside-toplevel
+        from mcpgateway.services.observability_service import ObservabilityService, current_trace_id  # pylint: disable=import-outside-toplevel
 
         uri = arguments.get("uri", "")
         if not uri:
@@ -1353,6 +1355,32 @@ class MetaServerService:
                 name="",
                 text="Error: uri is required",
             ).model_dump(by_alias=True)
+
+        start_time = time.monotonic()
+        success = False
+        error_message = None
+        trace_id = current_trace_id.get()
+        db_span_id = None
+        observability_service = ObservabilityService() if trace_id else None
+
+        # Start observability span
+        if trace_id and observability_service:
+            try:
+                with fresh_db_session() as span_db:
+                    db_span_id = observability_service.start_span(
+                        db=span_db,
+                        trace_id=trace_id,
+                        name="resource.read",
+                        attributes={
+                            "resource.uri": uri,
+                            "user": kwargs.get("user_email", "anonymous"),
+                        },
+                        commit=False,
+                    )
+                logger.debug(f"✓ Created resource.read span: {db_span_id} for resource: {uri}")
+            except Exception as e:
+                logger.warning(f"Failed to start observability span for resource read: {e}")
+                db_span_id = None
 
         try:
             db_gen = get_db()
@@ -1365,16 +1393,18 @@ class MetaServerService:
                 )
 
                 if resource is None:
+                    error_message = f"Resource not found: {uri}"
                     return ReadResourceResponse(
                         uri=uri,
                         name="",
-                        text=f"Resource not found: {uri}",
+                        text=error_message,
                     ).model_dump(by_alias=True)
 
                 text_content = resource.text_content
                 if text_content is None and resource.binary_content is not None:
                     text_content = "(binary content — not displayable as text)"
 
+                success = True
                 return ReadResourceResponse(
                     uri=resource.uri,
                     name=resource.name,
@@ -1388,12 +1418,31 @@ class MetaServerService:
                 except StopIteration:
                     pass
         except Exception as e:
+            error_message = str(e)
             logger.error(f"Error reading resource '{uri}': {e}")
             return ReadResourceResponse(
                 uri=uri,
                 name="",
                 text=f"Error reading resource: {str(e)}",
             ).model_dump(by_alias=True)
+        finally:
+            # End observability span
+            if db_span_id and observability_service:
+                try:
+                    with fresh_db_session() as span_db:
+                        observability_service.end_span(
+                            db=span_db,
+                            span_id=db_span_id,
+                            status="ok" if success else "error",
+                            status_message=error_message,
+                            attributes={
+                                "duration_ms": (time.monotonic() - start_time) * 1000,
+                            },
+                            commit=False,
+                        )
+                    logger.debug(f"✓ Ended resource.read span: {db_span_id}")
+                except Exception as e:
+                    logger.warning(f"Failed to end observability span for resource read: {e}")
 
     async def _list_prompts(self, arguments: Dict[str, Any], **kwargs: Any) -> Dict[str, Any]:
         """List MCP prompts with pagination and optional filtering.
@@ -1469,6 +1518,7 @@ class MetaServerService:
             GetPromptResponse as dict with template and optionally rendered content.
         """
         from mcpgateway.db import Prompt  # pylint: disable=import-outside-toplevel
+        from mcpgateway.services.observability_service import ObservabilityService, current_trace_id  # pylint: disable=import-outside-toplevel
 
         name = arguments.get("name", "")
         prompt_args = arguments.get("arguments", {})
@@ -1479,6 +1529,33 @@ class MetaServerService:
                 template="",
                 description="Error: name is required",
             ).model_dump(by_alias=True)
+
+        start_time = time.monotonic()
+        success = False
+        error_message = None
+        trace_id = current_trace_id.get()
+        db_span_id = None
+        observability_service = ObservabilityService() if trace_id else None
+
+        # Start observability span
+        if trace_id and observability_service:
+            try:
+                with fresh_db_session() as span_db:
+                    db_span_id = observability_service.start_span(
+                        db=span_db,
+                        trace_id=trace_id,
+                        name="prompt.render",
+                        attributes={
+                            "prompt.name": name,
+                            "arguments_count": len(prompt_args) if prompt_args else 0,
+                            "user": kwargs.get("user_email", "anonymous"),
+                        },
+                        commit=False,
+                    )
+                logger.debug(f"✓ Created prompt.render span: {db_span_id} for prompt: {name}")
+            except Exception as e:
+                logger.warning(f"Failed to start observability span for prompt render: {e}")
+                db_span_id = None
 
         try:
             db_gen = get_db()
@@ -1491,10 +1568,11 @@ class MetaServerService:
                 )
 
                 if prompt is None:
+                    error_message = f"Prompt not found: {name}"
                     return GetPromptResponse(
                         name=name,
                         template="",
-                        description=f"Prompt not found: {name}",
+                        description=error_message,
                     ).model_dump(by_alias=True)
 
                 rendered = None
@@ -1505,6 +1583,7 @@ class MetaServerService:
                     except (ValueError, KeyError) as e:
                         rendered = f"Error rendering prompt: {str(e)}"
 
+                success = True
                 return GetPromptResponse(
                     name=prompt.name,
                     description=prompt.description,
@@ -1519,12 +1598,31 @@ class MetaServerService:
                 except StopIteration:
                     pass
         except Exception as e:
+            error_message = str(e)
             logger.error(f"Error getting prompt '{name}': {e}")
             return GetPromptResponse(
                 name=name,
                 template="",
                 description=f"Error getting prompt: {str(e)}",
             ).model_dump(by_alias=True)
+        finally:
+            # End observability span
+            if db_span_id and observability_service:
+                try:
+                    with fresh_db_session() as span_db:
+                        observability_service.end_span(
+                            db=span_db,
+                            span_id=db_span_id,
+                            status="ok" if success else "error",
+                            status_message=error_message,
+                            attributes={
+                                "duration_ms": (time.monotonic() - start_time) * 1000,
+                            },
+                            commit=False,
+                        )
+                    logger.debug(f"✓ Ended prompt.render span: {db_span_id}")
+                except Exception as e:
+                    logger.warning(f"Failed to end observability span for prompt render: {e}")
 
 
 # Module-level singleton
