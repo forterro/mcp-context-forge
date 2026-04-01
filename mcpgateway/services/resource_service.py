@@ -1699,7 +1699,7 @@ class ResourceService(BaseService):
                     try:
                         db_span_id = observability_service.start_span(
                             trace_id=trace_id,
-                            name="invoke.resource",
+                            name="resource.read",
                             attributes={
                                 "resource.name": resource_name if resource_name else "unknown",
                                 "resource.id": str(resource_id) if resource_id else "unknown",
@@ -1720,10 +1720,10 @@ class ResourceService(BaseService):
                     "gateway.transport": getattr(gateway, "transport") or "uknown",
                     "gateway.url": getattr(gateway, "url") or "unknown",
                 }
-                if is_input_capture_enabled("invoke.resource"):
+                if is_input_capture_enabled("resource.read"):
                     span_attributes["langfuse.observation.input"] = serialize_trace_payload({"uri": str(uri) if uri else "unknown"})
 
-                with create_span("invoke.resource", span_attributes) as span:
+                with create_span("resource.read", span_attributes) as span:
                     valid = False
                     if gateway.ca_certificate:
                         if settings.enable_ed25519_signing:
@@ -2030,7 +2030,7 @@ class ResourceService(BaseService):
                         else:
                             # Note: meta_data not passed - MCP SDK 1.25.0 read_resource() doesn't support it
                             resource_text = await connect_to_streamablehttp_server(server_url=gateway_url, authentication=headers, uri=uri)
-                        if span and resource_text is not None and is_output_capture_enabled("invoke.resource"):
+                        if span and resource_text is not None and is_output_capture_enabled("resource.read"):
                             set_span_attribute(span, "langfuse.observation.output", serialize_trace_payload({"content": resource_text}))
                         success = True  # Mark as successful before returning
                         return resource_text
@@ -2052,7 +2052,7 @@ class ResourceService(BaseService):
                                     status_message=error_message if error_message else None,
                                 )
                                 db_span_ended = True
-                                logger.debug(f"✓ Ended invoke.resource span: {db_span_id}")
+                                logger.debug(f"✓ Ended resource.read span: {db_span_id}")
                             except Exception as e:
                                 logger.warning(f"Failed to end observability span for invoking resource: {e}")
 
