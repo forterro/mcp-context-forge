@@ -3356,7 +3356,28 @@ class ToolService(BaseService):
                     logger.error(f"Failed to obtain OAuth access token for gateway {gateway_name}: {e}")
                     raise ToolInvocationError(f"OAuth authentication failed for gateway: {str(e)}")
         else:
-            headers = decode_auth(gateway_auth_value) if gateway_auth_value else {}
+            # Check for per-user personal credentials before falling back to shared gateway auth
+            user_credential_headers = None
+            if has_gateway and app_user_email and gateway_id_str:
+                try:
+                    from mcpgateway.services.credential_storage_service import CredentialStorageService  # pylint: disable=import-outside-toplevel
+
+                    with fresh_db_session() as cred_db:
+                        cred_service = CredentialStorageService(cred_db)
+                        cred_record = await cred_service.get_credential_record(gateway_id_str, app_user_email)
+                        if cred_record:
+                            cred_value = await cred_service.get_credential(gateway_id_str, app_user_email)
+                            if cred_value:
+                                user_credential_headers = CredentialStorageService.build_auth_headers(
+                                    cred_record.credential_type, cred_value, gateway_auth_type
+                                )
+                except Exception as e:
+                    logger.debug(f"Failed to check personal credentials for gateway {gateway_name}: {e}")
+
+            if user_credential_headers:
+                headers = user_credential_headers
+            else:
+                headers = decode_auth(gateway_auth_value) if gateway_auth_value else {}
 
         if request_headers:
             headers = compute_passthrough_headers_cached(
@@ -4390,7 +4411,28 @@ class ToolService(BaseService):
                                 logger.error(f"Failed to obtain OAuth access token for gateway {gateway_name}: {e}")
                                 raise ToolInvocationError(f"OAuth authentication failed for gateway: {str(e)}")
                     else:
-                        headers = decode_auth(gateway_auth_value) if gateway_auth_value else {}
+                        # Check for per-user personal credentials before falling back to shared gateway auth
+                        user_credential_headers = None
+                        if has_gateway and app_user_email and gateway_id_str:
+                            try:
+                                from mcpgateway.services.credential_storage_service import CredentialStorageService  # pylint: disable=import-outside-toplevel
+
+                                with fresh_db_session() as cred_db:
+                                    cred_service = CredentialStorageService(cred_db)
+                                    cred_record = await cred_service.get_credential_record(gateway_id_str, app_user_email)
+                                    if cred_record:
+                                        cred_value = await cred_service.get_credential(gateway_id_str, app_user_email)
+                                        if cred_value:
+                                            user_credential_headers = CredentialStorageService.build_auth_headers(
+                                                cred_record.credential_type, cred_value, gateway_auth_type
+                                            )
+                            except Exception as e:
+                                logger.debug(f"Failed to check personal credentials for gateway {gateway_name}: {e}")
+
+                        if user_credential_headers:
+                            headers = user_credential_headers
+                        else:
+                            headers = decode_auth(gateway_auth_value) if gateway_auth_value else {}
 
                     # Use cached passthrough headers (no DB query needed)
                     if request_headers:
