@@ -20958,6 +20958,114 @@ async function fetchToolsForGateway(gatewayId, gatewayName) {
 // Expose fetch tools function to global scope
 window.fetchToolsForGateway = fetchToolsForGateway;
 
+// ===================================================================
+// PERSONAL CREDENTIAL MANAGEMENT
+// ===================================================================
+
+/**
+ * Open the credential modal for a gateway, checking current credential status.
+ */
+async function openCredentialModal(gatewayId, gatewayName) {
+    document.getElementById("credential-gateway-id").value = gatewayId;
+    document.getElementById("credential-gateway-name").textContent = gatewayName || gatewayId;
+    document.getElementById("credential-value").value = "";
+    document.getElementById("credential-label").value = "";
+    document.getElementById("credential-type").value = "api_key";
+    const statusEl = document.getElementById("credential-status");
+    statusEl.classList.add("hidden");
+
+    // Check if user already has a credential for this gateway
+    try {
+        const res = await fetch(`${ROOT_PATH}/credentials/${gatewayId}`, {
+            headers: { Accept: "application/json" },
+        });
+        if (res.ok) {
+            const data = await res.json();
+            if (data.has_credential) {
+                statusEl.innerHTML = `<span class="text-green-600 dark:text-green-400">✓ You have a stored <strong>${data.credential_type}</strong> credential${data.label ? ` (${data.label})` : ""}. Submitting will replace it.</span>`;
+                statusEl.classList.remove("hidden");
+                if (data.credential_type) {
+                    document.getElementById("credential-type").value = data.credential_type;
+                }
+                if (data.label) {
+                    document.getElementById("credential-label").value = data.label;
+                }
+            }
+        }
+    } catch (_) {
+        // Silently ignore
+    }
+
+    openModal("credential-modal");
+}
+
+/**
+ * Submit the credential form to store a personal credential.
+ */
+async function submitCredential() {
+    const gatewayId = document.getElementById("credential-gateway-id").value;
+    const credentialType = document.getElementById("credential-type").value;
+    const credentialValue = document.getElementById("credential-value").value;
+    const label = document.getElementById("credential-label").value || null;
+
+    if (!credentialValue) {
+        showErrorMessage("Credential value is required");
+        return;
+    }
+
+    try {
+        const res = await fetch(`${ROOT_PATH}/credentials/${gatewayId}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Accept: "application/json" },
+            body: JSON.stringify({
+                credential_type: credentialType,
+                credential_value: credentialValue,
+                label: label,
+            }),
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+            showSuccessMessage("Personal credential stored successfully");
+            closeModal("credential-modal");
+        } else {
+            showErrorMessage(data.detail || data.message || "Failed to store credential");
+        }
+    } catch (err) {
+        showErrorMessage(`Failed to store credential: ${err.message}`);
+    }
+}
+
+/**
+ * Revoke the stored credential for the current gateway.
+ */
+async function revokeCredential() {
+    const gatewayId = document.getElementById("credential-gateway-id").value;
+    if (!confirm("Are you sure you want to revoke your personal credential for this gateway?")) {
+        return;
+    }
+
+    try {
+        const res = await fetch(`${ROOT_PATH}/credentials/${gatewayId}`, {
+            method: "DELETE",
+            headers: { Accept: "application/json" },
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+            showSuccessMessage("Personal credential revoked");
+            closeModal("credential-modal");
+        } else {
+            showErrorMessage(data.message || "No credential found to revoke");
+        }
+    } catch (err) {
+        showErrorMessage(`Failed to revoke credential: ${err.message}`);
+    }
+}
+
+// Expose credential functions to global scope (used by Admin.* in templates)
+window.openCredentialModal = openCredentialModal;
+window.submitCredential = submitCredential;
+window.revokeCredential = revokeCredential;
+
 console.log("🛡️ ContextForge AI Gateway admin.js initialized");
 
 // ===================================================================
