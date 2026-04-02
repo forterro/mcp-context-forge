@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """Add user_gateway_credentials table for per-user personal credentials
 
-Revision ID: a1b2c3d4e5f6
-Revises: z1a2b3c4d5e6
+Revision ID: 6d369d815def
+Revises: a1b2c3d4e5f6
 Create Date: 2026-04-02 10:00:00.000000
 
 """
@@ -12,8 +12,8 @@ from alembic import op
 import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
-revision = "a1b2c3d4e5f6"
-down_revision = "z1a2b3c4d5e6"
+revision = "6d369d815def"
+down_revision = "a1b2c3d4e5f6"
 branch_labels = None
 depends_on = None
 
