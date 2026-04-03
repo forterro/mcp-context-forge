@@ -1,0 +1,27 @@
+"""Merge Forterro RC3 migration heads
+
+Revision ID: forterro_rc3_merge
+Revises: a7f3c9e1b2d4, a1b2c3d4e5f6, b3c4d5e6f7a8, f7a2b1c3d4e5
+Create Date: 2026-04-04 12:00:00.000000
+
+"""
+from typing import Sequence, Union
+
+# revision identifiers, used by Alembic.
+revision: str = "forterro_rc3_merge"
+down_revision: Union[str, Sequence[str], None] = (
+    "a7f3c9e1b2d4",
+    "a1b2c3d4e5f6",
+    "b3c4d5e6f7a8",
+    "f7a2b1c3d4e5",
+)
+branch_labels = None
+depends_on = None
+
+
+def upgrade() -> None:
+    pass
+
+
+def downgrade() -> None:
+    pass
