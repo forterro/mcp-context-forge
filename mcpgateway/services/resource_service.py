@@ -1716,18 +1716,21 @@ class ResourceService(BaseService):
 
                 if trace_id and observability_service:
                     try:
-                        db_span_id = observability_service.start_span(
-                            db=db,
-                            trace_id=trace_id,
-                            name="resource.read",
-                            attributes={
-                                "resource.name": resource_name if resource_name else "unknown",
-                                "resource.id": str(resource_id) if resource_id else "unknown",
-                                "resource.uri": str(uri) or "unknown",
-                                "gateway.transport": getattr(gateway, "transport") or "uknown",
-                                "gateway.url": getattr(gateway, "url") or "unknown",
-                            },
-                        )
+                        # Use fresh_db_session() to avoid transaction conflicts with handler's db session
+                        with fresh_db_session() as span_db:
+                            db_span_id = observability_service.start_span(
+                                db=span_db,
+                                trace_id=trace_id,
+                                name="resource.read",
+                                attributes={
+                                    "resource.name": resource_name if resource_name else "unknown",
+                                    "resource.id": str(resource_id) if resource_id else "unknown",
+                                    "resource.uri": str(uri) or "unknown",
+                                    "gateway.transport": getattr(gateway, "transport") or "uknown",
+                                    "gateway.url": getattr(gateway, "url") or "unknown",
+                                },
+                                commit=False,
+                            )
                         logger.debug(f"✓ Created resource.read span: {db_span_id} for resource: {resource_id} & {uri}")
                     except Exception as e:
                         logger.warning(f"Failed to start the observability span for invoking resource: {e}")
@@ -2184,19 +2187,22 @@ class ResourceService(BaseService):
 
         if trace_id and observability_service:
             try:
-                db_span_id = observability_service.start_span(
-                    db=db,
-                    trace_id=trace_id,
-                    name="resource.read",
-                    attributes={
-                        "resource.uri": str(resource_uri) if resource_uri else "unknown",
-                        "user": user or "anonymous",
-                        "server_id": server_id,
-                        "request_id": request_id,
-                        "http.url": uri if uri is not None and uri.startswith("http") else None,
-                        "resource.type": "template" if (uri is not None and "{" in uri and "}" in uri) else "static",
-                    },
-                )
+                # Use fresh_db_session() to avoid transaction conflicts with handler's db session
+                with fresh_db_session() as span_db:
+                    db_span_id = observability_service.start_span(
+                        db=span_db,
+                        trace_id=trace_id,
+                        name="resource.read",
+                        attributes={
+                            "resource.uri": str(resource_uri) if resource_uri else "unknown",
+                            "user": user or "anonymous",
+                            "server_id": server_id,
+                            "request_id": request_id,
+                            "http.url": uri if uri is not None and uri.startswith("http") else None,
+                            "resource.type": "template" if (uri is not None and "{" in uri and "}" in uri) else "static",
+                        },
+                        commit=False,
+                    )
                 logger.debug(f"✓ Created resource.read span: {db_span_id} for resource: {uri}")
             except Exception as e:
                 logger.warning(f"Failed to start observability span for resource reading: {e}")
