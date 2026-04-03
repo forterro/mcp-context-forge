@@ -3695,14 +3695,32 @@ class GatewayService(BaseService):  # pylint: disable=too-many-instance-attribut
                                     with anyio.fail_after(settings.health_check_timeout):
                                         await pooled.session.list_tools()
                         else:
-                            async with streamablehttp_client(url=gateway_url, headers=headers, timeout=settings.health_check_timeout, httpx_client_factory=get_httpx_client_factory) as (
-                                read_stream,
-                                write_stream,
-                                _get_session_id,
-                            ):
-                                async with ClientSession(read_stream, write_stream) as session:
-                                    # Initialize the session
-                                    response = await session.initialize()
+                            # Use a lightweight JSON-RPC POST ``initialize`` instead of the
+                            # full SDK client.  The SDK opens a GET SSE stream after
+                            # initialize, which returns 405 on servers that don't support
+                            # server-initiated messages (M365, Kubernetes MCP, GitHub).
+                            # The MCP spec says GET is optional, so a successful POST
+                            # ``initialize`` is sufficient proof of health.
+                            # NOTE: ``ping`` would require an existing session, so
+                            # ``initialize`` is the only stateless RPC we can send.
+                            init_payload = {
+                                "jsonrpc": "2.0",
+                                "id": "health-check",
+                                "method": "initialize",
+                                "params": {
+                                    "protocolVersion": "2024-11-05",
+                                    "capabilities": {},
+                                    "clientInfo": {"name": "mcpgateway-health", "version": "1.0.0"},
+                                },
+                            }
+                            init_headers = {
+                                **headers,
+                                "Content-Type": "application/json",
+                                "Accept": "application/json, text/event-stream",
+                            }
+                            timeout = httpx.Timeout(settings.health_check_timeout)
+                            response = await client.post(gateway_url, json=init_payload, headers=init_headers, timeout=timeout)
+                            response.raise_for_status()
 
                     # Reactivate gateway if it was previously inactive and health check passed now
                     if gateway_enabled and not gateway_reachable:
