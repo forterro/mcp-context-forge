@@ -2990,6 +2990,10 @@ class ResourceService(BaseService):
                     target_team_id = resource_update.team_id if resource_update.team_id is not None else resource.team_id
                     _validate_resource_team_assignment(db, user_email, target_team_id)
                 resource.visibility = resource_update.visibility
+            if resource_update.team_id is not None:
+                resource.team_id = resource_update.team_id
+            if resource_update.owner_email is not None:
+                resource.owner_email = resource_update.owner_email
 
             # Update content if provided
             if resource_update.content is not None:
