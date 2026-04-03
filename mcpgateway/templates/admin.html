@@ -3214,6 +3214,12 @@
                 servers.
               </p>
             </div>
+            <!-- Team Selection -->
+            <div class="mt-4">
+              <label class="block text-sm font-medium text-gray-700 dark:text-gray-400">Team</label>
+              <select id="server-team-id" name="team_id" class="mt-1 px-1.5 block w-full rounded-md border border-gray-300 dark:border-gray-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-900 dark:text-gray-300"></select>
+              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Team that owns this server.</p>
+            </div>
             <!-- Visibility options -->
             <div class="mt-4">
               <label
@@ -4153,6 +4159,12 @@
                 tools.
               </p>
             </div>
+            <!-- Team Selection -->
+            <div class="mt-4">
+              <label class="block text-sm font-medium text-gray-700 dark:text-gray-400">Team</label>
+              <select id="tool-team-id" name="team_id" class="mt-1 px-1.5 block w-full rounded-md border border-gray-300 dark:border-gray-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-900 dark:text-gray-300"></select>
+              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Team that owns this tool.</p>
+            </div>
             <!-- Visibility options -->
             <div class="mt-4">
               <label
@@ -4649,6 +4661,12 @@
                 </p>
               </div>
             </div>
+            <!-- Team Selection -->
+            <div class="mt-4">
+              <label class="block text-sm font-medium text-gray-700 dark:text-gray-400">Team</label>
+              <select id="resource-team-id" name="team_id" class="mt-1 px-1.5 block w-full rounded-md border border-gray-300 dark:border-gray-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-900 dark:text-gray-300"></select>
+              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Team that owns this resource.</p>
+            </div>
             <!-- Visibility options -->
             <div class="mt-4">
               <label
@@ -4919,6 +4937,12 @@ Hello &#123;&#123; name &#125;&#125;, welcome to &#123;&#123; company &#125;&#12
                 Enter tags separated by commas. Tags help categorize and filter
                 prompts.
               </p>
+            </div>
+            <!-- Team Selection -->
+            <div class="mt-4">
+              <label class="block text-sm font-medium text-gray-700 dark:text-gray-400">Team</label>
+              <select id="prompt-team-id" name="team_id" class="mt-1 px-1.5 block w-full rounded-md border border-gray-300 dark:border-gray-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-900 dark:text-gray-300"></select>
+              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Team that owns this prompt.</p>
             </div>
             <!-- Visibility options -->
             <div class="mt-4">
@@ -5522,6 +5546,12 @@ Hello &#123;&#123; name &#125;&#125;, welcome to &#123;&#123; company &#125;&#12
                   Separate multiple tags with commas. Tags will be automatically
                   normalized (lowercase, spaces→hyphens).
                 </p>
+              </div>
+              <!-- Team Selection -->
+              <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-400">Team</label>
+                <select id="gateway-team-id" name="team_id" class="mt-1 px-1.5 block w-full rounded-md border border-gray-300 dark:border-gray-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-900 dark:text-gray-300"></select>
+                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Team that owns this gateway.</p>
               </div>
               <div>
                 <label
@@ -7491,6 +7521,13 @@ Hello &#123;&#123; name &#125;&#125;, welcome to &#123;&#123; company &#125;&#12
                 />
               </div>
 
+              <!-- Team Selection -->
+              <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-400">Team</label>
+                <select id="a2a-team-id" name="team_id" class="mt-1 px-1.5 block w-full rounded-md border border-gray-300 dark:border-gray-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-900 dark:text-gray-300"></select>
+                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Team that owns this agent.</p>
+              </div>
+
               <!-- Visibility -->
               <div class="sm:col-span-2">
                 <label
@@ -8872,6 +8909,13 @@ class="fixed z-40 inset-0 bg-gray-800 bg-opacity-75 flex items-center justify-ce
                       filter tools.
                     </p>
                   </div>
+                  <!-- Team selection -->
+                  <div class="mt-4">
+                    <label for="edit-tool-team-id" class="block text-sm font-medium text-gray-700 dark:text-gray-400">Team</label>
+                    <select id="edit-tool-team-id" name="team_id" class="mt-1 px-1.5 block w-full rounded-md border border-gray-300 dark:border-gray-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-900 dark:text-gray-300">
+                    </select>
+                    <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Team that owns this tool.</p>
+                  </div>
                   <!-- Visibility options -->
                   <div id="edit-tool-visibility" class="mt-4">
                     <label
@@ -9193,6 +9237,13 @@ class="fixed z-40 inset-0 bg-gray-800 bg-opacity-75 flex items-center justify-ce
                         filter resources.
                       </p>
                     </div>
+                    <!-- Team selection -->
+                    <div class="mt-4">
+                      <label for="edit-resource-team-id" class="block text-sm font-medium text-gray-700 dark:text-gray-400">Team</label>
+                      <select id="edit-resource-team-id" name="team_id" class="mt-1 px-1.5 block w-full rounded-md border border-gray-300 dark:border-gray-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-900 dark:text-gray-300">
+                      </select>
+                      <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Team that owns this resource.</p>
+                    </div>
                     <!-- Visibility options -->
                     <div id="edit-resource-visibility" class="mt-4">
                       <label
@@ -9417,6 +9468,13 @@ class="fixed z-40 inset-0 bg-gray-800 bg-opacity-75 flex items-center justify-ce
                         Enter tags separated by commas. Tags help categorize and
                         filter prompts.
                       </p>
+                    </div>
+                    <!-- Team selection -->
+                    <div class="mt-4">
+                      <label for="edit-prompt-team-id" class="block text-sm font-medium text-gray-700 dark:text-gray-400">Team</label>
+                      <select id="edit-prompt-team-id" name="team_id" class="mt-1 px-1.5 block w-full rounded-md border border-gray-300 dark:border-gray-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-900 dark:text-gray-300">
+                      </select>
+                      <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Team that owns this prompt.</p>
                     </div>
                     <!-- Visibility options -->
                     <div id="edit-prompt-visibility" class="mt-4">
@@ -9869,6 +9927,13 @@ class="fixed z-40 inset-0 bg-gray-800 bg-opacity-75 flex items-center justify-ce
                         Separate multiple tags with commas. Tags will be
                         automatically normalized.
                       </p>
+                    </div>
+                    <!-- Team selection -->
+                    <div class="mt-4">
+                      <label for="edit-gateway-team-id" class="block text-sm font-medium text-gray-700 dark:text-gray-400">Team</label>
+                      <select id="edit-gateway-team-id" name="team_id" class="mt-1 px-1.5 block w-full rounded-md border border-gray-300 dark:border-gray-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-900 dark:text-gray-300">
+                      </select>
+                      <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Team that owns this gateway.</p>
                     </div>
 
                     <!-- Visibility options -->
@@ -10791,6 +10856,14 @@ class="fixed z-40 inset-0 bg-gray-800 bg-opacity-75 flex items-center justify-ce
                         />
                       </div>
 
+                      <!-- Team selection -->
+                      <div>
+                        <label for="edit-a2a-team-id" class="block text-sm font-medium text-gray-700 dark:text-gray-400">Team</label>
+                        <select id="edit-a2a-team-id" name="team_id" class="mt-1 px-1.5 block w-full rounded-md border border-gray-300 dark:border-gray-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-900 dark:text-gray-300">
+                        </select>
+                        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Team that owns this agent.</p>
+                      </div>
+
                       <!-- Visibility -->
                       <div>
                         <label class="block text-sm font-medium text-gray-700 dark:text-gray-400">Visibility</label>
@@ -11014,6 +11087,13 @@ class="fixed z-40 inset-0 bg-gray-800 bg-opacity-75 flex items-center justify-ce
                         Enter tags separated by commas. Tags help categorize and
                         filter servers.
                       </p>
+                    </div>
+                    <!-- Team selection -->
+                    <div class="mt-4">
+                      <label for="edit-server-team-id" class="block text-sm font-medium text-gray-700 dark:text-gray-400">Team</label>
+                      <select id="edit-server-team-id" name="team_id" class="mt-1 px-1.5 block w-full rounded-md border border-gray-300 dark:border-gray-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-900 dark:text-gray-300">
+                      </select>
+                      <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Team that owns this server.</p>
                     </div>
 
                     <!-- Visibility options -->
@@ -14142,6 +14222,53 @@ class="fixed z-40 inset-0 bg-gray-800 bg-opacity-75 flex items-center justify-ce
                     {% endif %}
                   </p>
                 </div>
+
+                <!-- OIDC Group Sync -->
+                <div class="border-t border-gray-200 dark:border-gray-700 pt-4">
+                  <h4 class="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-3">OIDC Group Sync</h4>
+                  <div class="flex items-center mb-3">
+                    <input
+                      type="checkbox"
+                      name="oidc_sync_enabled"
+                      id="create-oidc-sync"
+                      value="true"
+                      onchange="document.getElementById('create-oidc-fields').style.display = this.checked ? 'block' : 'none'"
+                      class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 dark:border-gray-600 rounded"
+                    />
+                    <label for="create-oidc-sync" class="ml-2 text-sm text-gray-700 dark:text-gray-300">
+                      Sync members from an OIDC group
+                    </label>
+                  </div>
+                  <div id="create-oidc-fields" style="display: none">
+                    <div class="mb-3">
+                      <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        OIDC Group ID
+                      </label>
+                      <input
+                        type="text"
+                        name="oidc_group_id"
+                        placeholder="e.g. 5993f5bb-566d-495d-8e80-918bc5e190d8"
+                        class="block w-full px-1.5 border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                      />
+                      <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                        The group UUID from your identity provider (e.g. Entra ID group Object ID)
+                      </p>
+                    </div>
+                    <div>
+                      <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Default Role for Synced Members
+                      </label>
+                      <select
+                        name="oidc_sync_role"
+                        class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                      >
+                        <option value="member" selected>Viewer</option>
+                        <option value="developer">Developer</option>
+                        <option value="owner">Owner</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
               </div>
 
               <div class="mt-6 flex justify-end space-x-3">
@@ -14331,8 +14458,8 @@ class="fixed z-40 inset-0 bg-gray-800 bg-opacity-75 flex items-center justify-ce
                   required
                   class="mt-1 block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 dark:bg-gray-700 dark:text-white"
                 >
-                  <option value="member">Member</option>
-                  <option value="admin">Admin</option>
+                  <option value="member">Viewer</option>
+                  <option value="developer">Developer</option>
                   <option value="owner">Owner</option>
                 </select>
               </div>
@@ -14425,8 +14552,8 @@ class="fixed z-40 inset-0 bg-gray-800 bg-opacity-75 flex items-center justify-ce
                   required
                   class="mt-1 block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 dark:bg-gray-700 dark:text-white"
                 >
-                  <option value="member">Member</option>
-                  <option value="admin">Admin</option>
+                  <option value="member">Viewer</option>
+                  <option value="developer">Developer</option>
                   <option value="owner">Owner</option>
                 </select>
               </div>
