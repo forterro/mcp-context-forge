@@ -3409,15 +3409,14 @@ class _StreamableHttpAuthHandler:
         Returns:
             True if the request is allowed with public-only access, False if rejected.
         """
-        # If client supplied a Bearer header but with empty credentials, fail closed
-        if bearer_header_supplied:
-            return await self._send_error(detail="Invalid authentication credentials", headers={"WWW-Authenticate": "Bearer"})
-
+        # Build the WWW-Authenticate header, enriching it with RFC 9728
+        # resource_metadata when the target server has OAuth enabled.
         # Per-server OAuth enforcement MUST run before the global auth check so that
         # oauth_enabled servers always return 401 with resource_metadata URL (RFC 9728).
         # Without this, strict mode (mcp_require_auth=True) returns a generic
         # WWW-Authenticate: Bearer with no resource_metadata, and MCP clients cannot
-        # discover the OAuth server to authenticate.  (Fixes #3752)
+        # discover the OAuth server to authenticate.
+        www_auth = "Bearer"
         match = _SERVER_ID_RE.search(path)
         if match:
             per_server_id = match.group("server_id")
@@ -3431,9 +3430,13 @@ class _StreamableHttpAuthHandler:
                 logger.exception("OAuth enforcement check failed for server %s", per_server_id)
                 return await self._send_error(detail="Service unavailable — unable to verify server authentication requirements", status_code=503)
 
-        # Strict mode: require authentication (non-OAuth servers get generic 401)
+        # If client supplied a Bearer header but with empty credentials, fail closed
+        if bearer_header_supplied:
+            return await self._send_error(detail="Invalid authentication credentials", headers={"WWW-Authenticate": www_auth})
+
+        # Strict mode: require authentication
         if settings.mcp_require_auth:
-            return await self._send_error(detail="Authentication required for MCP endpoints", headers={"WWW-Authenticate": "Bearer"})
+            return await self._send_error(detail="Authentication required for MCP endpoints", headers={"WWW-Authenticate": www_auth})
 
         # Permissive mode: allow unauthenticated access with public-only scope
         # Set context indicating unauthenticated user with public-only access (teams=[])
