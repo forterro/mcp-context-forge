@@ -3603,39 +3603,38 @@ class GatewayService(BaseService):  # pylint: disable=too-many-instance-attribut
                         grant_type = gateway_oauth_config.get("grant_type", "client_credentials")
 
                         if grant_type == "authorization_code":
-                            # For Authorization Code flow, try to get stored tokens
+                            # Authorization Code flow requires an interactive user
+                            # to complete the OAuth dance.  The health-check runs
+                            # under a system identity (platform_admin_email) which
+                            # typically has NO stored token for these gateways.
+                            # Marking the gateway as failed here would undo any
+                            # manual re-authorization within minutes — so we skip
+                            # the connectivity check and preserve the current
+                            # reachable state instead.
+                            access_token = None
                             try:
                                 # First-Party
                                 from mcpgateway.services.token_storage_service import TokenStorageService  # pylint: disable=import-outside-toplevel
 
-                                # Use fresh session for OAuth token lookup
-                                with fresh_db_session() as token_db:
-                                    token_storage = TokenStorageService(token_db)
-
-                                    # Get user-specific OAuth token
-                                    if not user_email:
-                                        if span:
-                                            set_span_attribute(span, "health.status", "unhealthy")
-                                            set_span_error(span, "User email required for OAuth token")
-                                        await self._handle_gateway_failure(gateway)
-                                        return
-
-                                    access_token = await token_storage.get_user_token(gateway_id, user_email)
-
-                                if access_token:
-                                    headers["Authorization"] = f"Bearer {access_token}"
-                                else:
-                                    if span:
-                                        set_span_attribute(span, "health.status", "unhealthy")
-                                        set_span_error(span, "No valid OAuth token for user")
-                                    await self._handle_gateway_failure(gateway)
-                                    return
+                                if user_email:
+                                    with fresh_db_session() as token_db:
+                                        token_storage = TokenStorageService(token_db)
+                                        access_token = await token_storage.get_user_token(gateway_id, user_email)
                             except Exception as e:
-                                logger.error(f"Failed to obtain stored OAuth token for gateway {gateway_name}: {e}")
+                                logger.debug(f"Could not look up OAuth token for health check on {gateway_name}: {e}")
+
+                            if access_token:
+                                headers["Authorization"] = f"Bearer {access_token}"
+                            else:
+                                # No usable token — skip health check, preserve
+                                # current reachable state (do NOT call
+                                # _handle_gateway_failure).
+                                logger.debug(
+                                    f"Skipping health check for authorization_code gateway "
+                                    f"{gateway_name}: no system-level OAuth token available"
+                                )
                                 if span:
-                                    set_span_attribute(span, "health.status", "unhealthy")
-                                    set_span_error(span, "Failed to obtain stored OAuth token")
-                                await self._handle_gateway_failure(gateway)
+                                    set_span_attribute(span, "health.status", "skipped")
                                 return
                         else:
                             # For Client Credentials flow, get token directly
@@ -3695,14 +3694,32 @@ class GatewayService(BaseService):  # pylint: disable=too-many-instance-attribut
                                     with anyio.fail_after(settings.health_check_timeout):
                                         await pooled.session.list_tools()
                         else:
-                            async with streamablehttp_client(url=gateway_url, headers=headers, timeout=settings.health_check_timeout, httpx_client_factory=get_httpx_client_factory) as (
-                                read_stream,
-                                write_stream,
-                                _get_session_id,
-                            ):
-                                async with ClientSession(read_stream, write_stream) as session:
-                                    # Initialize the session
-                                    response = await session.initialize()
+                            # Use a lightweight JSON-RPC POST ``initialize`` instead of the
+                            # full SDK client.  The SDK opens a GET SSE stream after
+                            # initialize, which returns 405 on servers that don't support
+                            # server-initiated messages (M365, Kubernetes MCP, GitHub).
+                            # The MCP spec says GET is optional, so a successful POST
+                            # ``initialize`` is sufficient proof of health.
+                            # NOTE: ``ping`` would require an existing session, so
+                            # ``initialize`` is the only stateless RPC we can send.
+                            init_payload = {
+                                "jsonrpc": "2.0",
+                                "id": "health-check",
+                                "method": "initialize",
+                                "params": {
+                                    "protocolVersion": "2024-11-05",
+                                    "capabilities": {},
+                                    "clientInfo": {"name": "mcpgateway-health", "version": "1.0.0"},
+                                },
+                            }
+                            init_headers = {
+                                **headers,
+                                "Content-Type": "application/json",
+                                "Accept": "application/json, text/event-stream",
+                            }
+                            timeout = httpx.Timeout(settings.health_check_timeout)
+                            response = await client.post(gateway_url, json=init_payload, headers=init_headers, timeout=timeout)
+                            response.raise_for_status()
 
                     # Reactivate gateway if it was previously inactive and health check passed now
                     if gateway_enabled and not gateway_reachable:
