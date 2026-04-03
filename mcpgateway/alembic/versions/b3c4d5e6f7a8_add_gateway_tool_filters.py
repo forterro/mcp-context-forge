@@ -1,7 +1,7 @@
 """Add tools_include and tools_exclude columns to gateways table.
 
 Revision ID: b3c4d5e6f7a8
-Revises: 6d369d815def
+Revises: a7f3c9e1b2d4
 Create Date: 2026-04-03 10:00:00.000000
 
 """
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision = "b3c4d5e6f7a8"
-down_revision = "6d369d815def"
+down_revision = "a7f3c9e1b2d4"
 branch_labels = None
 depends_on = None
 
