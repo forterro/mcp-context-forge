@@ -373,6 +373,50 @@ UI_EMBEDDED_DEFAULT_HIDDEN_HEADER_ITEMS: frozenset[str] = frozenset({"logout", "
 UI_HIDE_SECTIONS_COOKIE_NAME = "mcpgateway_ui_hide_sections"
 UI_HIDE_SECTIONS_COOKIE_MAX_AGE = 30 * 24 * 60 * 60  # 30 days
 
+# Cache for the bundle filename to avoid reading manifest on every request
+# Using a mutable dict to avoid the need for a global statement in the accessor function
+_bundle_js_cache: dict[str, Optional[str]] = {"filename": None}
+
+
+def get_bundle_js_filename() -> str:
+    """Get the hashed bundle.js filename from Vite manifest.
+
+    Reads the Vite manifest file to get the current hashed bundle filename.
+    Falls back to scanning for bundle-*.js on disk if the manifest is unreadable.
+    Invalidates the cache when the cached bundle file no longer exists on disk.
+
+    Returns:
+        str: The bundle filename (e.g., 'bundle-abc123.js')
+    """
+    static_dir = Path(__file__).parent / "static"
+
+    # Use cache if the bundle file still exists on disk
+    cached = _bundle_js_cache["filename"]
+    if cached is not None and (static_dir / cached).exists():
+        return cached
+
+    manifest_path = static_dir / ".vite" / "manifest.json"
+    try:
+        if manifest_path.exists():
+            with open(manifest_path, "r", encoding="utf-8") as f:
+                manifest = orjson.loads(f.read())
+                # The key is the input path relative to the project root
+                entry_key = "mcpgateway/admin_ui/index.js"
+                if entry_key in manifest and manifest[entry_key].get("file"):
+                    _bundle_js_cache["filename"] = manifest[entry_key]["file"]
+                    return _bundle_js_cache["filename"]  # type: ignore[return-value]
+    except Exception as e:
+        LOGGER.warning(f"Failed to read Vite manifest: {e}")
+
+    # Manifest unreadable or missing entry — find bundle file directly on disk
+    bundles = sorted(static_dir.glob("bundle-*.js"), key=lambda p: p.stat().st_mtime, reverse=True)
+    if bundles:
+        _bundle_js_cache["filename"] = bundles[0].name
+        return _bundle_js_cache["filename"]  # type: ignore[return-value]
+
+    LOGGER.error("No bundle-*.js found in %s — admin UI will not load", static_dir)
+    return ""
+
 
 def _normalize_ui_hide_values(raw: Any, valid_values: frozenset[str], aliases: Optional[Dict[str, str]] = None) -> set[str]:
     """Normalize UI hide values from CSV/list input into a validated set.
@@ -4039,6 +4083,7 @@ async def admin_ui(
             "require_token_expiration": getattr(settings, "require_token_expiration", True),
             "sri_hashes": load_sri_hashes(),
             "max_members_per_team": settings.max_members_per_team,
+            "bundle_js": get_bundle_js_filename(),
         },
     )
 
