@@ -53,7 +53,7 @@ import {
   updateHashForTab,
 } from "./tabs.js";
 import { initToolSelect } from "./tools.js";
-import { bindMcpAppMimeHelper, fetchWithTimeout, isAdminUser, safeGetElement } from "./utils.js";
+import { bindMcpAppMimeHelper, fetchWithTimeout, isAdminUser, populateTeamSelect, safeGetElement } from "./utils.js";
 import { debouncedServerSideTokenSearch, getTeamNameById } from "./tokens.js";
 import {
   closeGlobalSearchModal,
@@ -1496,6 +1496,20 @@ export const registerReloadAllResourceSections = function () {
         window.Admin.__initialSectionMarkup[s] = el.innerHTML;
       }
     });
+  });
+
+  // Populate team selects in CREATE forms on page load
+  document.addEventListener("DOMContentLoaded", () => {
+    const urlTeamId = new URL(window.location.href).searchParams.get("team_id") || "";
+    const createSelectIds = [
+      "server-team-id",
+      "tool-team-id",
+      "resource-team-id",
+      "prompt-team-id",
+      "gateway-team-id",
+      "a2a-team-id",
+    ];
+    createSelectIds.forEach((id) => populateTeamSelect(id, urlTeamId));
   });
 
   // Helper: try to re-run common initializers after a section's DOM is replaced
