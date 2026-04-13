@@ -808,6 +808,7 @@ export const populateTeamSelect = function (selectId, selectedTeamId) {
   const defaultOpt = document.createElement("option");
   defaultOpt.value = "";
   defaultOpt.textContent = teams.length > 0 ? "— Select a team —" : "No teams available";
+  defaultOpt.selected = true;
   select.appendChild(defaultOpt);
 
   for (let i = 0; i < teams.length; i++) {
@@ -816,8 +817,9 @@ export const populateTeamSelect = function (selectId, selectedTeamId) {
     const opt = document.createElement("option");
     opt.value = t.id;
     opt.textContent = t.name || ("Team " + t.id);
-    if (String(t.id) === String(selectedTeamId)) {
+    if (selectedTeamId && String(t.id) === String(selectedTeamId)) {
       opt.selected = true;
+      defaultOpt.selected = false;
     }
     select.appendChild(opt);
   }

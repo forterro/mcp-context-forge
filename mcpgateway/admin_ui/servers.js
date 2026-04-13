@@ -732,6 +732,9 @@ export const editServer = async function (serverId) {
     // Populate team dropdown with user's teams, pre-select the entity's current team
     populateTeamSelect("edit-server-team-id", server.teamId || "");
 
+    // Effective team ID for view-public toggle and association filtering
+    const teamId = server.teamId || new URL(window.location.href).searchParams.get("team_id");
+
     // Initialize View Public toggle for Edit Server modal
     if (teamId) {
       const viewPublicCheckbox = document.getElementById(
