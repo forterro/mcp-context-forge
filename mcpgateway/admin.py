@@ -3082,9 +3082,9 @@ async def admin_edit_server(
         visibility = str(form.get("visibility", "private"))
         user_email = get_user_email(user)
 
-        # Do NOT read team_id from the form — the frontend team selector may
-        # point to a different team than the entity's actual owner.  The service
-        # layer preserves the existing team_id via check_resource_ownership.
+        # Read team_id from the form dropdown
+        team_id_raw = form.get("team_id", None)
+        team_id = str(team_id_raw).strip() if team_id_raw and str(team_id_raw).strip() else None
 
         mod_metadata = MetadataCapture.extract_modification_metadata(request, user, 0)
 
@@ -3130,7 +3130,7 @@ async def admin_edit_server(
             associated_prompts=",".join(str(x) for x in associated_prompts_list),
             tags=tags,
             visibility=visibility,
-            team_id=None,  # Preserve existing team — never override from form
+            team_id=team_id,
             owner_email=user_email,
             oauth_enabled=oauth_enabled,
             oauth_config=oauth_config,
@@ -11760,9 +11760,10 @@ async def admin_edit_tool(
     visibility = str(form.get("visibility", "private"))
 
     user_email = get_user_email(user)
-    # Do NOT read team_id from the form — the frontend team selector may
-    # point to a different team than the entity's actual owner.  The service
-    # layer preserves the existing team_id via check_resource_ownership.
+
+    # Read team_id from the form dropdown
+    team_id_raw = form.get("team_id", None)
+    team_id = str(team_id_raw).strip() if team_id_raw and str(team_id_raw).strip() else None
 
     headers_raw2 = form.get("headers")
     input_schema_raw2 = form.get("input_schema")
@@ -11797,7 +11798,7 @@ async def admin_edit_tool(
         "tags": tags,
         "visibility": visibility,
         "owner_email": user_email,
-        "team_id": None,  # Preserve existing team — never override from form
+        "team_id": team_id,
     }
     # Only include integration_type if it's provided (not disabled in form)
     if "integrationType" in form:
@@ -12495,9 +12496,9 @@ async def admin_edit_gateway(
 
         user_email = get_user_email(user)
 
-        # Do NOT read team_id from the form — the frontend team selector may
-        # point to a different team than the entity's actual owner.  The service
-        # layer preserves the existing team_id via check_resource_ownership.
+        # Read team_id from the form dropdown
+        team_id_raw = form.get("team_id", None)
+        team_id = str(team_id_raw).strip() if team_id_raw and str(team_id_raw).strip() else None
 
         # Auto-detect OAuth: if oauth_config is present and auth_type not explicitly set, use "oauth"
         auth_type_from_form = str(form.get("auth_type", ""))
@@ -12526,7 +12527,7 @@ async def admin_edit_gateway(
             oauth_config=oauth_config,
             visibility=visibility,
             owner_email=user_email,
-            team_id=None,  # Preserve existing team — never override from form
+            team_id=team_id,
         )
 
         mod_metadata = MetadataCapture.extract_modification_metadata(request, user, 0)
@@ -12870,9 +12871,9 @@ async def admin_edit_resource(
 
     user_email = get_user_email(user)
 
-    # Do NOT read team_id from the form — the frontend team selector may
-    # point to a different team than the entity's actual owner.  The service
-    # layer preserves the existing team_id via check_resource_ownership.
+    # Read team_id from the form dropdown
+    team_id_raw = form.get("team_id", None)
+    team_id = str(team_id_raw).strip() if team_id_raw and str(team_id_raw).strip() else None
 
     # Parse tags from comma-separated string
     tags_str = str(form.get("tags", ""))
@@ -12889,7 +12890,7 @@ async def admin_edit_resource(
             template=str(form.get("template")),
             tags=tags,
             visibility=visibility,
-            team_id=None,  # Preserve existing team — never override from form
+            team_id=team_id,
             owner_email=user_email,
         )
         LOGGER.info(f"ResourceUpdate object created: {resource}")
@@ -13235,9 +13236,9 @@ async def admin_edit_prompt(
     visibility = str(form.get("visibility", "private"))
     user_email = get_user_email(user)
 
-    # Do NOT read team_id from the form — the frontend team selector may
-    # point to a different team than the entity's actual owner.  The service
-    # layer preserves the existing team_id via check_resource_ownership.
+    # Read team_id from the form dropdown
+    team_id_raw = form.get("team_id", None)
+    team_id = str(team_id_raw).strip() if team_id_raw and str(team_id_raw).strip() else None
 
     # Parse tags from comma-separated string
     tags_str = str(form.get("tags", ""))
@@ -13255,7 +13256,7 @@ async def admin_edit_prompt(
             arguments=arguments,
             tags=tags,
             visibility=visibility,
-            team_id=None,  # Preserve existing team — never override from form
+            team_id=team_id,
             owner_email=user_email,
         )
         await prompt_service.update_prompt(
@@ -15794,9 +15795,9 @@ async def admin_edit_a2a_agent(
 
         user_email = get_user_email(user)
 
-        # Do NOT read team_id from the form — the frontend team selector may
-        # point to a different team than the entity's actual owner.  The service
-        # layer preserves the existing team_id via check_resource_ownership.
+        # Read team_id from the form dropdown
+        team_id_raw = form.get("team_id", None)
+        team_id = str(team_id_raw).strip() if team_id_raw and str(team_id_raw).strip() else None
 
         # Auto-detect OAuth: if oauth_config is present and auth_type not explicitly set, use "oauth"
         auth_type_from_form = str(form.get("auth_type", ""))
@@ -15823,7 +15824,7 @@ async def admin_edit_a2a_agent(
             passthrough_headers=passthrough_headers,
             oauth_config=oauth_config,
             visibility=visibility,
-            team_id=None,  # Preserve existing team — never override from form
+            team_id=team_id,
             owner_email=user_email,
             capabilities=capabilities,  # Optional, not editable via UI
             config=config,  # Optional, not editable via UI
