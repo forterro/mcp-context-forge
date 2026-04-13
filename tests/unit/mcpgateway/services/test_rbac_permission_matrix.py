@@ -35,6 +35,7 @@ PLATFORM_ADMIN_PERMISSIONS = ["*"]
 TEAM_ADMIN_PERMISSIONS = sorted(
     [
         "admin.dashboard",
+        "admin.overview",
         "gateways.read",
         "servers.read",
         "servers.use",
@@ -79,6 +80,7 @@ TEAM_ADMIN_PERMISSIONS = sorted(
 DEVELOPER_PERMISSIONS = sorted(
     [
         "admin.dashboard",
+        "admin.overview",
         "gateways.read",
         "servers.read",
         "servers.use",
@@ -120,11 +122,14 @@ DEVELOPER_PERMISSIONS = sorted(
 VIEWER_PERMISSIONS = sorted(
     [
         "admin.dashboard",
+        "admin.overview",
         "gateways.read",
         "servers.read",
+        "servers.use",
         "teams.read",
         "teams.join",
         "tools.read",
+        "tools.execute",
         "resources.read",
         "prompts.read",
         "llm.read",
@@ -139,8 +144,10 @@ VIEWER_PERMISSIONS = sorted(
 PLATFORM_VIEWER_PERMISSIONS = sorted(
     [
         "admin.dashboard",
+        "admin.overview",
         "gateways.read",
         "servers.read",
+        "servers.use",
         "teams.read",
         "teams.join",
         "tools.read",
@@ -357,12 +364,12 @@ class TestDeveloperVsTeamAdmin:
 
 
 # ---------------------------------------------------------------------------
-# D1.4: Viewer Permission Matrix (Read-Only)
+# D1.4: Viewer Permission Matrix
 # ---------------------------------------------------------------------------
 
 
 class TestViewerPermissions:
-    """Viewer should only have read-only and dashboard permissions."""
+    """Viewer should have read, dashboard, and tools.execute permissions."""
 
     @pytest.mark.parametrize("permission", VIEWER_PERMISSIONS)
     def test_viewer_granted_permissions(self, matrix_db, permission):
@@ -387,7 +394,7 @@ class TestViewerPermissions:
 
 
 class TestPlatformViewerPermissions:
-    """Platform viewer should have same read-only permissions as viewer, at global scope."""
+    """Platform viewer should have read-only permissions at global scope (no tools.execute)."""
 
     @pytest.mark.parametrize("permission", PLATFORM_VIEWER_PERMISSIONS)
     def test_platform_viewer_granted_permissions(self, matrix_db, permission):
@@ -405,6 +412,14 @@ class TestPlatformViewerPermissions:
         svc.clear_cache()
         result = asyncio.run(svc.check_permission(user_email="pviewer@test.local", permission=permission, allow_admin_bypass=False))
         assert result is False, f"platform_viewer should NOT have mutation permission {permission}"
+
+    def test_platform_viewer_denied_tools_execute(self, matrix_db):
+        """platform_viewer (global) must NOT have tools.execute — only team-scoped viewer gets it."""
+        db, roles, team_id = matrix_db
+        svc = PermissionService(db, audit_enabled=False)
+        svc.clear_cache()
+        result = asyncio.run(svc.check_permission(user_email="pviewer@test.local", permission="tools.execute", allow_admin_bypass=False))
+        assert result is False, "platform_viewer should NOT have tools.execute"
 
 
 # ---------------------------------------------------------------------------
@@ -460,8 +475,11 @@ class TestRoleDefinitionSync:
         team_admin_set = set(TEAM_ADMIN_PERMISSIONS)
         assert developer_set < team_admin_set, f"Developer should be strict subset of team_admin. Extra in dev: {developer_set - team_admin_set}"
 
-        # Verify platform_viewer permissions match viewer permissions
-        assert set(PLATFORM_VIEWER_PERMISSIONS) == viewer_set, "Platform viewer should have same permissions as viewer"
+        # Verify viewer has tools.execute but platform_viewer does not
+        platform_viewer_set = set(PLATFORM_VIEWER_PERMISSIONS)
+        assert "tools.execute" in viewer_set, "Viewer (team-scoped) should have tools.execute"
+        assert "tools.execute" not in platform_viewer_set, "Platform viewer (global) should NOT have tools.execute"
+        assert viewer_set - platform_viewer_set == {"tools.execute"}, f"Viewer should differ from platform_viewer only by tools.execute, got: {viewer_set - platform_viewer_set}"
 
     def test_bootstrap_roles_exist_in_db(self, matrix_db):
         """Verify all expected roles were created in the test DB."""
