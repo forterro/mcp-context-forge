@@ -2634,8 +2634,8 @@ async def admin_add_server(request: Request, db: Session = Depends(get_db), user
             visibility=visibility,
             oauth_enabled=oauth_enabled,
             oauth_config=oauth_config,
-            server_type=str(form.get("server_type", "standard")),
-            hide_underlying_tools=form.get("hide_underlying_tools", "false") == "true",
+            server_type="meta" if form.get("meta_server_enabled") else str(form.get("server_type", "standard")),
+            hide_underlying_tools=form.get("hide_underlying_tools") == "true" or form.get("hide_underlying_tools") == "on",
         )
     except KeyError as e:
         # Convert KeyError to ValidationError-like response
@@ -2790,8 +2790,8 @@ async def admin_edit_server(
             owner_email=user_email,
             oauth_enabled=oauth_enabled,
             oauth_config=oauth_config,
-            server_type=str(form.get("server_type", "standard")),
-            hide_underlying_tools=form.get("hide_underlying_tools", "false") == "true",
+            server_type="meta" if form.get("meta_server_enabled") else str(form.get("server_type", "standard")),
+            hide_underlying_tools=form.get("hide_underlying_tools") == "true" or form.get("hide_underlying_tools") == "on",
         )
 
         await server_service.update_server(
