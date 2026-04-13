@@ -2990,7 +2990,10 @@ async def admin_add_server(request: Request, db: Session = Depends(get_db), user
         team_id = str(team_id_raw) if team_id_raw is not None else None
 
         team_service = TeamManagementService(db)
-        team_id = await team_service.verify_team_for_user(user_email, team_id)
+        try:
+            team_id = await team_service.verify_team_for_user(user_email, team_id)
+        except PermissionError as ex:
+            return ORJSONResponse(content={"message": str(ex), "success": False}, status_code=403)
 
         # Extract metadata for server creation
         creation_metadata = MetadataCapture.extract_creation_metadata(request, user)
@@ -3077,22 +3080,11 @@ async def admin_edit_server(
     try:
         LOGGER.debug(f"User {get_user_email(user)} is editing server ID {server_id} with name: {form.get('name')}")
         visibility = str(form.get("visibility", "private"))
-        _check_public_visibility_allowed(visibility, team_id=form.get("team_id"))
         user_email = get_user_email(user)
-        team_id_raw = form.get("team_id", None)
-        team_id = str(team_id_raw) if team_id_raw is not None else None
 
-        # Preserve existing server's team_id when no explicit team_id is provided.
-        # Without this guard, verify_team_for_user() falls back to the user's
-        # personal team, silently reassigning the server on every edit.
-        if not team_id:
-            existing_server = db.get(DbServer, server_id)
-            existing_team = getattr(existing_server, "team_id", None) if existing_server else None
-            if isinstance(existing_team, str) and existing_team:
-                team_id = existing_team
-
-        team_service = TeamManagementService(db)
-        team_id = await team_service.verify_team_for_user(user_email, team_id)
+        # Do NOT read team_id from the form — the frontend team selector may
+        # point to a different team than the entity's actual owner.  The service
+        # layer preserves the existing team_id via check_resource_ownership.
 
         mod_metadata = MetadataCapture.extract_modification_metadata(request, user, 0)
 
@@ -3138,7 +3130,7 @@ async def admin_edit_server(
             associated_prompts=",".join(str(x) for x in associated_prompts_list),
             tags=tags,
             visibility=visibility,
-            team_id=team_id,
+            team_id=None,  # Preserve existing team — never override from form
             owner_email=user_email,
             oauth_enabled=oauth_enabled,
             oauth_config=oauth_config,
@@ -11604,7 +11596,10 @@ async def admin_add_tool(
     # Determine personal team for default assignment
     team_id = form.get("team_id", None)
     team_service = TeamManagementService(db)
-    team_id = await team_service.verify_team_for_user(user_email, team_id)
+    try:
+        team_id = await team_service.verify_team_for_user(user_email, team_id)
+    except PermissionError as ex:
+        return ORJSONResponse(content={"message": str(ex), "success": False}, status_code=403)
     # Parse tags from comma-separated string
     tags_str = str(form.get("tags", ""))
     tags: list[str] = [tag.strip() for tag in tags_str.split(",") if tag.strip()] if tags_str else []
@@ -11763,14 +11758,11 @@ async def admin_edit_tool(
     auth_obj = _build_auth_obj_from_form(form)
 
     visibility = str(form.get("visibility", "private"))
-    _check_public_visibility_allowed(visibility, team_id=form.get("team_id"))
 
     user_email = get_user_email(user)
-    # Determine personal team for default assignment
-    team_id = form.get("team_id", None)
-    LOGGER.info(f"before Verifying team for user {user_email} with team_id {team_id}")
-    team_service = TeamManagementService(db)
-    team_id = await team_service.verify_team_for_user(user_email, team_id)
+    # Do NOT read team_id from the form — the frontend team selector may
+    # point to a different team than the entity's actual owner.  The service
+    # layer preserves the existing team_id via check_resource_ownership.
 
     headers_raw2 = form.get("headers")
     input_schema_raw2 = form.get("input_schema")
@@ -11805,7 +11797,7 @@ async def admin_edit_tool(
         "tags": tags,
         "visibility": visibility,
         "owner_email": user_email,
-        "team_id": team_id,
+        "team_id": None,  # Preserve existing team — never override from form
     }
     # Only include integration_type if it's provided (not disabled in form)
     if "integrationType" in form:
@@ -12312,7 +12304,10 @@ async def admin_add_gateway(request: Request, db: Session = Depends(get_db), use
     team_id = form.get("team_id", None)
 
     team_service = TeamManagementService(db)
-    team_id = await team_service.verify_team_for_user(user_email, team_id)
+    try:
+        team_id = await team_service.verify_team_for_user(user_email, team_id)
+    except PermissionError as ex:
+        return ORJSONResponse(content={"message": str(ex), "success": False}, status_code=403)
 
     try:
         # Extract creation metadata
@@ -12413,7 +12408,6 @@ async def admin_edit_gateway(
         tags: List[str] = [tag.strip() for tag in tags_str.split(",") if tag.strip()] if tags_str else []
 
         visibility = str(form.get("visibility", "private"))
-        _check_public_visibility_allowed(visibility, team_id=form.get("team_id"))
 
         # Parse auth_headers JSON if present
         auth_headers_json = form.get("auth_headers") or ""
@@ -12500,21 +12494,10 @@ async def admin_edit_gateway(
                 LOGGER.info(f"✅ Assembled OAuth config from UI form fields (edit): grant_type={oauth_grant_type}, issuer={oauth_issuer}")
 
         user_email = get_user_email(user)
-        # Determine personal team for default assignment
-        team_id_raw = form.get("team_id", None)
-        team_id = str(team_id_raw) if team_id_raw is not None else None
 
-        # Preserve existing gateway's team_id when no explicit team_id is provided.
-        # Without this guard, verify_team_for_user() falls back to the user's
-        # personal team, silently reassigning the gateway on every edit.
-        if not team_id:
-            existing_gateway = db.get(DbGateway, gateway_id)
-            existing_team = getattr(existing_gateway, "team_id", None) if existing_gateway else None
-            if isinstance(existing_team, str) and existing_team:
-                team_id = existing_team
-
-        team_service = TeamManagementService(db)
-        team_id = await team_service.verify_team_for_user(user_email, team_id)
+        # Do NOT read team_id from the form — the frontend team selector may
+        # point to a different team than the entity's actual owner.  The service
+        # layer preserves the existing team_id via check_resource_ownership.
 
         # Auto-detect OAuth: if oauth_config is present and auth_type not explicitly set, use "oauth"
         auth_type_from_form = str(form.get("auth_type", ""))
@@ -12543,7 +12526,7 @@ async def admin_edit_gateway(
             oauth_config=oauth_config,
             visibility=visibility,
             owner_email=user_email,
-            team_id=team_id,
+            team_id=None,  # Preserve existing team — never override from form
         )
 
         mod_metadata = MetadataCapture.extract_modification_metadata(request, user, 0)
@@ -12756,7 +12739,10 @@ async def admin_add_resource(request: Request, db: Session = Depends(get_db), us
     # Determine personal team for default assignment
     team_id = form.get("team_id", None)
     team_service = TeamManagementService(db)
-    team_id = await team_service.verify_team_for_user(user_email, team_id)
+    try:
+        team_id = await team_service.verify_team_for_user(user_email, team_id)
+    except PermissionError as ex:
+        return ORJSONResponse(content={"message": str(ex), "success": False}, status_code=403)
 
     try:
         # Handle template field: convert empty string to None for optional field
@@ -12881,23 +12867,12 @@ async def admin_edit_resource(
     form = await request.form()
     LOGGER.info(f"Form data received for resource edit: {form}")
     visibility = str(form.get("visibility", "private"))
-    _check_public_visibility_allowed(visibility, team_id=form.get("team_id"))
 
     user_email = get_user_email(user)
-    team_id_raw = form.get("team_id", None)
-    team_id = str(team_id_raw) if team_id_raw is not None else None
 
-    # Preserve existing resource's team_id when no explicit team_id is provided.
-    # Without this guard, verify_team_for_user() falls back to the user's
-    # personal team, silently reassigning the resource on every edit.
-    if not team_id:
-        existing_resource = db.get(DbResource, resource_id)
-        existing_team = getattr(existing_resource, "team_id", None) if existing_resource else None
-        if isinstance(existing_team, str) and existing_team:
-            team_id = existing_team
-
-    team_service = TeamManagementService(db)
-    team_id = await team_service.verify_team_for_user(user_email, team_id)
+    # Do NOT read team_id from the form — the frontend team selector may
+    # point to a different team than the entity's actual owner.  The service
+    # layer preserves the existing team_id via check_resource_ownership.
 
     # Parse tags from comma-separated string
     tags_str = str(form.get("tags", ""))
@@ -12914,7 +12889,7 @@ async def admin_edit_resource(
             template=str(form.get("template")),
             tags=tags,
             visibility=visibility,
-            team_id=team_id,
+            team_id=None,  # Preserve existing team — never override from form
             owner_email=user_email,
         )
         LOGGER.info(f"ResourceUpdate object created: {resource}")
@@ -13148,7 +13123,10 @@ async def admin_add_prompt(request: Request, db: Session = Depends(get_db), user
     # Determine personal team for default assignment
     team_id = form.get("team_id", None)
     team_service = TeamManagementService(db)
-    team_id = await team_service.verify_team_for_user(user_email, team_id)
+    try:
+        team_id = await team_service.verify_team_for_user(user_email, team_id)
+    except PermissionError as ex:
+        return ORJSONResponse(content={"message": str(ex), "success": False}, status_code=403)
 
     # Parse tags from comma-separated string
     tags_str = str(form.get("tags", ""))
@@ -13255,23 +13233,11 @@ async def admin_edit_prompt(
     form = await request.form()
 
     visibility = str(form.get("visibility", "private"))
-    _check_public_visibility_allowed(visibility, team_id=form.get("team_id"))
     user_email = get_user_email(user)
-    # Determine personal team for default assignment
-    team_id_raw = form.get("team_id", None)
-    team_id = str(team_id_raw) if team_id_raw is not None else None
 
-    # Preserve existing prompt's team_id when no explicit team_id is provided.
-    # Without this guard, verify_team_for_user() falls back to the user's
-    # personal team, silently reassigning the prompt on every edit.
-    if not team_id:
-        existing_prompt = db.get(DbPrompt, prompt_id)
-        existing_team = getattr(existing_prompt, "team_id", None) if existing_prompt else None
-        if isinstance(existing_team, str) and existing_team:
-            team_id = existing_team
-
-    team_service = TeamManagementService(db)
-    team_id = await team_service.verify_team_for_user(user_email, team_id)
+    # Do NOT read team_id from the form — the frontend team selector may
+    # point to a different team than the entity's actual owner.  The service
+    # layer preserves the existing team_id via check_resource_ownership.
 
     # Parse tags from comma-separated string
     tags_str = str(form.get("tags", ""))
@@ -13289,7 +13255,7 @@ async def admin_edit_prompt(
             arguments=arguments,
             tags=tags,
             visibility=visibility,
-            team_id=team_id,
+            team_id=None,  # Preserve existing team — never override from form
             owner_email=user_email,
         )
         await prompt_service.update_prompt(
@@ -15489,7 +15455,10 @@ async def admin_add_a2a_agent(
         # Determine personal team for default assignment
         team_id = form.get("team_id", None)
         team_service = TeamManagementService(db)
-        team_id = await team_service.verify_team_for_user(user_email, team_id)
+        try:
+            team_id = await team_service.verify_team_for_user(user_email, team_id)
+        except PermissionError as ex:
+            return ORJSONResponse(content={"message": str(ex), "success": False}, status_code=403)
 
         # Process tags
         ts_val = form.get("tags", "")
@@ -15717,7 +15686,6 @@ async def admin_edit_a2a_agent(
 
         # Visibility
         visibility = str(form.get("visibility", "private"))
-        _check_public_visibility_allowed(visibility, team_id=form.get("team_id"))
 
         # Agent Type
         agent_type = str(form.get("agent_type", "generic"))
@@ -15825,20 +15793,10 @@ async def admin_edit_a2a_agent(
                 LOGGER.info(f"✅ Assembled OAuth config from UI form fields (edit): grant_type={oauth_grant_type}, issuer={oauth_issuer}")
 
         user_email = get_user_email(user)
-        team_id_raw = form.get("team_id", None)
-        team_id = str(team_id_raw) if team_id_raw is not None else None
 
-        # Preserve existing agent's team_id when no explicit team_id is provided.
-        # Without this guard, verify_team_for_user() falls back to the user's
-        # personal team, silently reassigning the agent on every edit.
-        if not team_id:
-            existing_agent = db.get(DbA2AAgent, agent_id)
-            existing_team = getattr(existing_agent, "team_id", None) if existing_agent else None
-            if isinstance(existing_team, str) and existing_team:
-                team_id = existing_team
-
-        team_service = TeamManagementService(db)
-        team_id = await team_service.verify_team_for_user(user_email, team_id)
+        # Do NOT read team_id from the form — the frontend team selector may
+        # point to a different team than the entity's actual owner.  The service
+        # layer preserves the existing team_id via check_resource_ownership.
 
         # Auto-detect OAuth: if oauth_config is present and auth_type not explicitly set, use "oauth"
         auth_type_from_form = str(form.get("auth_type", ""))
@@ -15865,7 +15823,7 @@ async def admin_edit_a2a_agent(
             passthrough_headers=passthrough_headers,
             oauth_config=oauth_config,
             visibility=visibility,
-            team_id=team_id,
+            team_id=None,  # Preserve existing team — never override from form
             owner_email=user_email,
             capabilities=capabilities,  # Optional, not editable via UI
             config=config,  # Optional, not editable via UI
@@ -16281,7 +16239,6 @@ async def admin_update_grpc_service(
         raise HTTPException(status_code=404, detail="gRPC support is not available or disabled")
 
     try:
-        _check_public_visibility_allowed(service.visibility or "", team_id=getattr(service, "team_id", None))
         metadata = MetadataCapture.extract_modification_metadata(request, user, 0)
         user_email = get_user_email(user)
         result = await grpc_service_mgr.update_service(db, service_id, service, user_email, metadata)
