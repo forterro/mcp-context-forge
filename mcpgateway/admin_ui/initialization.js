@@ -1498,19 +1498,19 @@ export const registerReloadAllResourceSections = function () {
     });
   });
 
-  // Populate team selects in CREATE forms on page load
-  document.addEventListener("DOMContentLoaded", () => {
-    const urlTeamId = new URL(window.location.href).searchParams.get("team_id") || "";
-    const createSelectIds = [
-      "server-team-id",
-      "tool-team-id",
-      "resource-team-id",
-      "prompt-team-id",
-      "gateway-team-id",
-      "a2a-team-id",
-    ];
-    createSelectIds.forEach((id) => populateTeamSelect(id, urlTeamId));
-  });
+  // Populate team selects in CREATE forms immediately
+  // (this runs inside the DOMContentLoaded handler from events.js,
+  //  so the DOM and window.USER_TEAMS_DATA are already available)
+  const urlTeamId = new URL(window.location.href).searchParams.get("team_id") || "";
+  const createSelectIds = [
+    "server-team-id",
+    "tool-team-id",
+    "resource-team-id",
+    "prompt-team-id",
+    "gateway-team-id",
+    "a2a-team-id",
+  ];
+  createSelectIds.forEach((id) => populateTeamSelect(id, urlTeamId));
 
   // Helper: try to re-run common initializers after a section's DOM is replaced
   const reinitializeSection = function (sectionEl, sectionName) {
