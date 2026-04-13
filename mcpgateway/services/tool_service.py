@@ -88,7 +88,7 @@ from mcpgateway.services.team_management_service import TeamManagementService
 from mcpgateway.utils.correlation_id import get_correlation_id
 from mcpgateway.utils.create_slug import slugify
 from mcpgateway.utils.display_name import generate_display_name
-from mcpgateway.utils.gateway_access import build_gateway_auth_headers, check_gateway_access, extract_gateway_id_from_headers
+from mcpgateway.utils.gateway_access import build_gateway_auth_headers, check_gateway_access, extract_gateway_id_from_headers, resolve_gateway_auth_headers
 from mcpgateway.utils.metrics_common import build_top_performers
 from mcpgateway.utils.pagination import decode_cursor, encode_cursor, unified_paginate
 from mcpgateway.utils.passthrough_headers import compute_passthrough_headers_cached
@@ -2985,8 +2985,8 @@ class ToolService(BaseService):
             if not await check_gateway_access(db, gateway, user_email, token_teams):
                 raise ToolNotFoundError(f"Tool not found: {name}")
 
-            # Prepare headers with gateway auth
-            headers = build_gateway_auth_headers(gateway)
+            # Prepare headers with per-user credentials (falls back to gateway defaults)
+            headers = await resolve_gateway_auth_headers(gateway, app_user_email=user_email, db=db)
 
             # Forward passthrough headers if configured
             if gateway.passthrough_headers and request_headers:

@@ -78,7 +78,7 @@ from mcpgateway.services.prompt_service import PromptService
 from mcpgateway.services.resource_service import ResourceService
 from mcpgateway.services.tool_service import ToolService
 from mcpgateway.transports.redis_event_store import RedisEventStore
-from mcpgateway.utils.gateway_access import build_gateway_auth_headers, check_gateway_access, extract_gateway_id_from_headers, GATEWAY_ID_HEADER
+from mcpgateway.utils.gateway_access import build_gateway_auth_headers, check_gateway_access, extract_gateway_id_from_headers, GATEWAY_ID_HEADER, resolve_gateway_auth_headers
 from mcpgateway.utils.internal_http import internal_loopback_base_url, internal_loopback_verify
 from mcpgateway.utils.log_sanitizer import sanitize_for_log
 from mcpgateway.utils.orjson_response import ORJSONResponse
@@ -1157,21 +1157,23 @@ async def _validate_streamable_session_access(
     return False, HTTP_403_FORBIDDEN, "Session owner metadata unavailable"
 
 
-async def _proxy_list_tools_to_gateway(gateway: Any, request_headers: dict, user_context: dict, meta: Optional[Any] = None) -> List[types.Tool]:  # pylint: disable=unused-argument
+async def _proxy_list_tools_to_gateway(gateway: Any, request_headers: dict, user_context: dict, meta: Optional[Any] = None) -> List[types.Tool]:
     """Proxy tools/list request directly to remote MCP gateway using MCP SDK.
 
     Args:
         gateway: Gateway ORM instance
         request_headers: Request headers from client
-        user_context: User context (not used - _meta comes from MCP SDK)
+        user_context: User context dict with email for per-user credential lookup
         meta: Request metadata (_meta) from the original request
 
     Returns:
         List of Tool objects from remote server
     """
     try:
-        # Prepare headers with gateway auth
-        headers = build_gateway_auth_headers(gateway)
+        # Prepare headers with per-user credentials (falls back to gateway defaults)
+        user_email = user_context.get("email") if user_context else None
+        with SessionLocal() as db:
+            headers = await resolve_gateway_auth_headers(gateway, app_user_email=user_email, db=db)
 
         # Forward passthrough headers using shared utility (includes X-Upstream-Authorization rename)
         if request_headers:
@@ -1209,21 +1211,23 @@ async def _proxy_list_tools_to_gateway(gateway: Any, request_headers: dict, user
         return []
 
 
-async def _proxy_list_resources_to_gateway(gateway: Any, request_headers: dict, user_context: dict, meta: Optional[Any] = None) -> List[types.Resource]:  # pylint: disable=unused-argument
+async def _proxy_list_resources_to_gateway(gateway: Any, request_headers: dict, user_context: dict, meta: Optional[Any] = None) -> List[types.Resource]:
     """Proxy resources/list request directly to remote MCP gateway using MCP SDK.
 
     Args:
         gateway: Gateway ORM instance
         request_headers: Request headers from client
-        user_context: User context (not used - _meta comes from MCP SDK)
+        user_context: User context dict with email for per-user credential lookup
         meta: Request metadata (_meta) from the original request
 
     Returns:
         List of Resource objects from remote server
     """
     try:
-        # Prepare headers with gateway auth
-        headers = build_gateway_auth_headers(gateway)
+        # Prepare headers with per-user credentials (falls back to gateway defaults)
+        user_email = user_context.get("email") if user_context else None
+        with SessionLocal() as db:
+            headers = await resolve_gateway_auth_headers(gateway, app_user_email=user_email, db=db)
 
         # Forward passthrough headers using shared utility (includes X-Upstream-Authorization rename)
         if request_headers:
@@ -1267,21 +1271,23 @@ async def _proxy_list_resources_to_gateway(gateway: Any, request_headers: dict, 
         return []
 
 
-async def _proxy_read_resource_to_gateway(gateway: Any, resource_uri: str, user_context: dict, meta: Optional[Any] = None) -> List[Any]:  # pylint: disable=unused-argument
+async def _proxy_read_resource_to_gateway(gateway: Any, resource_uri: str, user_context: dict, meta: Optional[Any] = None) -> List[Any]:
     """Proxy resources/read request directly to remote MCP gateway using MCP SDK.
 
     Args:
         gateway: Gateway ORM instance
         resource_uri: URI of the resource to read
-        user_context: User context (not used - auth comes from gateway config)
+        user_context: User context dict with email for per-user credential lookup
         meta: Request metadata (_meta) from the original request
 
     Returns:
         List of content objects (TextResourceContents or BlobResourceContents) from remote server
     """
     try:
-        # Prepare headers with gateway auth
-        headers = build_gateway_auth_headers(gateway)
+        # Prepare headers with per-user credentials (falls back to gateway defaults)
+        user_email = user_context.get("email") if user_context else None
+        with SessionLocal() as db:
+            headers = await resolve_gateway_auth_headers(gateway, app_user_email=user_email, db=db)
 
         # Get request headers
         request_headers = request_headers_var.get()

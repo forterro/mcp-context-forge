@@ -58,7 +58,7 @@ from mcpgateway.services.observability_service import current_trace_id, Observab
 from mcpgateway.services.structured_logger import get_structured_logger
 from mcpgateway.services.team_management_service import TeamManagementService
 from mcpgateway.utils.create_slug import slugify
-from mcpgateway.utils.gateway_access import build_gateway_auth_headers
+from mcpgateway.utils.gateway_access import build_gateway_auth_headers, resolve_gateway_auth_headers
 from mcpgateway.utils.metrics_common import build_top_performers
 from mcpgateway.utils.pagination import unified_paginate
 from mcpgateway.utils.services_auth import decode_auth
@@ -320,7 +320,10 @@ class PromptService(BaseService):
             raise PromptError(f"Prompt '{prompt.name}' is gateway-backed but missing gateway metadata")
 
         gateway_url = str(gateway.url)
-        headers = build_gateway_auth_headers(gateway)
+        # Resolve per-user credentials (falls back to gateway defaults)
+        from mcpgateway.db import SessionLocal  # pylint: disable=import-outside-toplevel
+        with SessionLocal() as db:
+            headers = await resolve_gateway_auth_headers(gateway, app_user_email=user_identity, db=db)
         auth_query_params_decrypted: Optional[Dict[str, str]] = None
 
         if getattr(gateway, "auth_type", None) == "query_param" and getattr(gateway, "auth_query_params", None):
