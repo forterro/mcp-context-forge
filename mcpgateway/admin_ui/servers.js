@@ -15,6 +15,7 @@ import {
   showErrorMessage,
   decodeHtml,
   makeCopyIdButton,
+  populateTeamSelect,
 } from "./utils.js";
 
 /**
@@ -712,11 +713,11 @@ export const editServer = async function (serverId) {
     if (visibility) {
       // When public visibility is disabled and we're in a team-scoped view,
       // coerce legacy-public records to team.
-      const _teamId = new URL(window.location.href).searchParams.get("team_id");
+      const _urlTeamId = new URL(window.location.href).searchParams.get("team_id");
       const effectiveVisibility =
         window.ALLOW_PUBLIC_VISIBILITY === false &&
         visibility === "public" &&
-        _teamId
+        (server.teamId || _urlTeamId)
           ? "team"
           : visibility;
       if (effectiveVisibility === "public" && publicRadio) {
@@ -728,15 +729,8 @@ export const editServer = async function (serverId) {
       }
     }
 
-    const teamId = new URL(window.location.href).searchParams.get("team_id");
-
-    if (teamId) {
-      const hiddenInput = document.createElement("input");
-      hiddenInput.type = "hidden";
-      hiddenInput.name = "team_id";
-      hiddenInput.value = teamId;
-      editForm.appendChild(hiddenInput);
-    }
+    // Populate team dropdown with user's teams, pre-select the entity's current team
+    populateTeamSelect("edit-server-team-id", server.teamId || "");
 
     // Initialize View Public toggle for Edit Server modal
     if (teamId) {
