@@ -12244,9 +12244,6 @@ async def admin_add_gateway(request: Request, db: Session = Depends(get_db), use
         oauth_config_json = str(form.get("oauth_config"))
         oauth_config: Optional[dict[str, Any]] = None
 
-        LOGGER.info(f"DEBUG: oauth_config_json from form = '{oauth_config_json}'")
-        LOGGER.info(f"DEBUG: Individual OAuth fields - grant_type='{form.get('oauth_grant_type')}', issuer='{form.get('oauth_issuer')}'")
-
         # Option 1: Pre-assembled oauth_config JSON (from API calls)
         if oauth_config_json and oauth_config_json != "None":
             try:
@@ -12310,8 +12307,7 @@ async def admin_add_gateway(request: Request, db: Session = Depends(get_db), use
                 if oauth_token_endpoint_auth_method:
                     oauth_config["token_endpoint_auth_method"] = oauth_token_endpoint_auth_method
 
-                LOGGER.info(f"✅ Assembled OAuth config from UI form fields: grant_type={oauth_grant_type}, issuer={oauth_issuer}")
-                LOGGER.info(f"DEBUG: Complete oauth_config = {oauth_config}")
+                LOGGER.info(f"Assembled OAuth config from UI form fields: grant_type={oauth_grant_type}")
 
         # Handle passthrough_headers
         passthrough_headers = str(form.get("passthrough_headers"))
@@ -12342,14 +12338,12 @@ async def admin_add_gateway(request: Request, db: Session = Depends(get_db), use
             except (orjson.JSONDecodeError, ValueError):
                 tools_exclude = [p.strip() for p in tools_exclude_str.split(",") if p.strip()]
 
-        # Auto-detect OAuth: if oauth_config is present and auth_type not explicitly set, use "oauth"
+        # Read auth_type from form — always present in HTML form submissions
         auth_type_from_form = str(form.get("auth_type", ""))
-        LOGGER.info(f"DEBUG: auth_type from form: '{auth_type_from_form}', oauth_config present: {oauth_config is not None}")
-        if oauth_config and not auth_type_from_form:
-            auth_type_from_form = "oauth"
-            LOGGER.info("✅ Auto-detected OAuth configuration, setting auth_type='oauth'")
-        elif oauth_config and auth_type_from_form:
-            LOGGER.info(f"✅ OAuth config present with explicit auth_type='{auth_type_from_form}'")
+        # When auth_type is not "oauth", discard any oauth_config assembled from
+        # stale hidden form fields that retain values from previously loaded data
+        if auth_type_from_form != "oauth":
+            oauth_config = None
 
         ca_certificate: Optional[str] = None
         sig: Optional[str] = None
@@ -12638,11 +12632,12 @@ async def admin_edit_gateway(
         team_id_raw = form.get("team_id", None)
         team_id = str(team_id_raw).strip() if team_id_raw and str(team_id_raw).strip() else None
 
-        # Auto-detect OAuth: if oauth_config is present and auth_type not explicitly set, use "oauth"
+        # Read auth_type from form — always present in HTML form submissions
         auth_type_from_form = str(form.get("auth_type", ""))
-        if oauth_config and not auth_type_from_form:
-            auth_type_from_form = "oauth"
-            LOGGER.info("Auto-detected OAuth configuration in edit, setting auth_type='oauth'")
+        # When auth_type is not "oauth", discard any oauth_config assembled from
+        # stale hidden form fields that retain values from previously loaded data
+        if auth_type_from_form != "oauth":
+            oauth_config = None
 
         gateway = GatewayUpdate(  # Pydantic validation happens here
             name=str(form.get("name")),
@@ -15619,9 +15614,6 @@ async def admin_add_a2a_agent(
         oauth_config_json = str(form.get("oauth_config"))
         oauth_config: Optional[dict[str, Any]] = None
 
-        LOGGER.info(f"DEBUG: oauth_config_json from form = '{oauth_config_json}'")
-        LOGGER.info(f"DEBUG: Individual OAuth fields - grant_type='{form.get('oauth_grant_type')}', issuer='{form.get('oauth_issuer')}'")
-
         # Option 1: Pre-assembled oauth_config JSON (from API calls)
         if oauth_config_json and oauth_config_json != "None":
             try:
@@ -15680,8 +15672,7 @@ async def admin_add_a2a_agent(
                     if scopes:
                         oauth_config["scopes"] = scopes
 
-                LOGGER.info(f"✅ Assembled OAuth config from UI form fields: grant_type={oauth_grant_type}, issuer={oauth_issuer}")
-                LOGGER.info(f"DEBUG: Complete oauth_config = {oauth_config}")
+                LOGGER.info(f"Assembled OAuth config from UI form fields: grant_type={oauth_grant_type}")
 
         passthrough_headers = str(form.get("passthrough_headers"))
         if passthrough_headers and passthrough_headers.strip():
@@ -15693,14 +15684,12 @@ async def admin_add_a2a_agent(
         else:
             passthrough_headers = None
 
-        # Auto-detect OAuth: if oauth_config is present and auth_type not explicitly set, use "oauth"
+        # Read auth_type from form — always present in HTML form submissions
         auth_type_from_form = str(form.get("auth_type", ""))
-        LOGGER.info(f"DEBUG: auth_type from form: '{auth_type_from_form}', oauth_config present: {oauth_config is not None}")
-        if oauth_config and not auth_type_from_form:
-            auth_type_from_form = "oauth"
-            LOGGER.info("✅ Auto-detected OAuth configuration, setting auth_type='oauth'")
-        elif oauth_config and auth_type_from_form:
-            LOGGER.info(f"✅ OAuth config present with explicit auth_type='{auth_type_from_form}'")
+        # When auth_type is not "oauth", discard any oauth_config assembled from
+        # stale hidden form fields that retain values from previously loaded data
+        if auth_type_from_form != "oauth":
+            oauth_config = None
 
         agent_data = A2AAgentCreate(
             name=form["name"],
@@ -15942,11 +15931,12 @@ async def admin_edit_a2a_agent(
         team_id_raw = form.get("team_id", None)
         team_id = str(team_id_raw).strip() if team_id_raw and str(team_id_raw).strip() else None
 
-        # Auto-detect OAuth: if oauth_config is present and auth_type not explicitly set, use "oauth"
+        # Read auth_type from form — always present in HTML form submissions
         auth_type_from_form = str(form.get("auth_type", ""))
-        if oauth_config and not auth_type_from_form:
-            auth_type_from_form = "oauth"
-            LOGGER.info("Auto-detected OAuth configuration in edit, setting auth_type='oauth'")
+        # When auth_type is not "oauth", discard any oauth_config assembled from
+        # stale hidden form fields that retain values from previously loaded data
+        if auth_type_from_form != "oauth":
+            oauth_config = None
 
         agent_update = A2AAgentUpdate(
             name=form.get("name"),
