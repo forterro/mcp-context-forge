@@ -12218,13 +12218,14 @@ async def admin_add_gateway(request: Request, db: Session = Depends(get_db), use
                 LOGGER.info(f"Assembled OAuth config from UI form fields: grant_type={oauth_grant_type}")
 
         # Handle passthrough_headers
-        passthrough_headers = str(form.get("passthrough_headers"))
-        if passthrough_headers and passthrough_headers.strip():
+        passthrough_headers_raw = form.get("passthrough_headers")
+        passthrough_headers_str = str(passthrough_headers_raw) if passthrough_headers_raw else ""
+        if passthrough_headers_str.strip():
             try:
-                passthrough_headers = orjson.loads(passthrough_headers)
+                passthrough_headers = orjson.loads(passthrough_headers_str)
             except (orjson.JSONDecodeError, ValueError):
                 # Fallback to comma-separated parsing
-                passthrough_headers = [h.strip() for h in passthrough_headers.split(",") if h.strip()]
+                passthrough_headers = [h.strip() for h in passthrough_headers_str.split(",") if h.strip()]
         else:
             passthrough_headers = None
 
@@ -12414,13 +12415,14 @@ async def admin_edit_gateway(
                 auth_headers = []
 
         # Handle passthrough_headers
-        passthrough_headers = str(form.get("passthrough_headers"))
-        if passthrough_headers and passthrough_headers.strip():
+        passthrough_headers_raw = form.get("passthrough_headers")
+        passthrough_headers_str = str(passthrough_headers_raw) if passthrough_headers_raw else ""
+        if passthrough_headers_str.strip():
             try:
-                passthrough_headers = orjson.loads(passthrough_headers)
+                passthrough_headers = orjson.loads(passthrough_headers_str)
             except (orjson.JSONDecodeError, ValueError):
                 # Fallback to comma-separated parsing
-                passthrough_headers = [h.strip() for h in passthrough_headers.split(",") if h.strip()]
+                passthrough_headers = [h.strip() for h in passthrough_headers_str.split(",") if h.strip()]
         else:
             passthrough_headers = None
 
@@ -12876,13 +12878,24 @@ async def admin_edit_resource(
 
     try:
         mod_metadata = MetadataCapture.extract_modification_metadata(request, user, 0)
+
+        # Only include content if the form field is actually present (the textarea
+        # is currently commented-out in the HTML).  Passing "" would silently wipe
+        # the existing resource content.
+        content_raw = form.get("content")
+        content = str(content_raw) if content_raw is not None else None
+
+        # The JS handler sends "uri_template", not "template"
+        uri_template_raw = form.get("uri_template")
+        uri_template = str(uri_template_raw) if uri_template_raw else None
+
         resource = ResourceUpdate(
             uri=str(form.get("uri", "")),
             name=str(form.get("name", "")),
             description=str(form.get("description")),
             mime_type=str(form.get("mimeType")),
-            content=str(form.get("content", "")),
-            template=str(form.get("template")),
+            content=content,
+            uri_template=uri_template,
             tags=tags,
             visibility=visibility,
             team_id=team_id,
@@ -15534,13 +15547,14 @@ async def admin_add_a2a_agent(
 
                 LOGGER.info(f"Assembled OAuth config from UI form fields: grant_type={oauth_grant_type}")
 
-        passthrough_headers = str(form.get("passthrough_headers"))
-        if passthrough_headers and passthrough_headers.strip():
+        passthrough_headers_raw = form.get("passthrough_headers")
+        passthrough_headers_str = str(passthrough_headers_raw) if passthrough_headers_raw else ""
+        if passthrough_headers_str.strip():
             try:
-                passthrough_headers = orjson.loads(passthrough_headers)
+                passthrough_headers = orjson.loads(passthrough_headers_str)
             except (orjson.JSONDecodeError, ValueError):
                 # Fallback to comma-separated parsing
-                passthrough_headers = [h.strip() for h in passthrough_headers.split(",") if h.strip()]
+                passthrough_headers = [h.strip() for h in passthrough_headers_str.split(",") if h.strip()]
         else:
             passthrough_headers = None
 
@@ -15708,13 +15722,14 @@ async def admin_edit_a2a_agent(
                 auth_headers = []
 
         # Passthrough headers
-        passthrough_headers = str(form.get("passthrough_headers"))
-        if passthrough_headers and passthrough_headers.strip():
+        passthrough_headers_raw = form.get("passthrough_headers")
+        passthrough_headers_str = str(passthrough_headers_raw) if passthrough_headers_raw else ""
+        if passthrough_headers_str.strip():
             try:
-                passthrough_headers = orjson.loads(passthrough_headers)
+                passthrough_headers = orjson.loads(passthrough_headers_str)
             except (orjson.JSONDecodeError, ValueError):
                 # Fallback to comma-separated parsing
-                passthrough_headers = [h.strip() for h in passthrough_headers.split(",") if h.strip()]
+                passthrough_headers = [h.strip() for h in passthrough_headers_str.split(",") if h.strip()]
         else:
             passthrough_headers = None
 
