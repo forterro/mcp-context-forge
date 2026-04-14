@@ -176,13 +176,25 @@ def _validate_audience(claims: Dict[str, Any], oauth_config: Dict[str, Any], gat
         acceptable.add(client_id)
         acceptable.add(f"api://{client_id}")
 
-    # Extract resource IDs from Azure AD /.default scope patterns.
-    # When a scope like "ea9ffc3e-.../.default" is configured, the token
-    # audience will be that resource ID, not the client_id.
+    # Extract resource IDs from Azure AD scope patterns.
+    # Pattern 1: "{resource_id}/.default" — token aud = resource_id
+    # Pattern 2: "api://{resource_id}/{permission}" — token aud = resource_id
+    # In both cases Entra ID issues the token with aud set to the
+    # resource application's client_id (a GUID), not the URI.
     for scope in oauth_config.get("scopes", []):
-        if isinstance(scope, str) and scope.endswith("/.default"):
+        if not isinstance(scope, str):
+            continue
+        if scope.endswith("/.default"):
             resource_id = scope.removesuffix("/.default")
             if resource_id:
+                acceptable.add(resource_id)
+                acceptable.add(f"api://{resource_id}")
+        elif scope.startswith("api://"):
+            # api://{resource_id}/{permission} — extract the resource_id
+            without_scheme = scope[len("api://"):]
+            slash_pos = without_scheme.find("/")
+            if slash_pos > 0:
+                resource_id = without_scheme[:slash_pos]
                 acceptable.add(resource_id)
                 acceptable.add(f"api://{resource_id}")
 
