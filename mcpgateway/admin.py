@@ -12526,16 +12526,16 @@ async def admin_edit_gateway(
                 auth_headers = []
 
         # Handle passthrough_headers
+        # Use [] (empty list) to signal "user cleared the field" vs None (not provided)
         passthrough_headers_raw = form.get("passthrough_headers")
         passthrough_headers_str = str(passthrough_headers_raw) if passthrough_headers_raw else ""
+        passthrough_headers: Optional[List[str]] = []
         if passthrough_headers_str.strip():
             try:
                 passthrough_headers = orjson.loads(passthrough_headers_str)
             except (orjson.JSONDecodeError, ValueError):
                 # Fallback to comma-separated parsing
                 passthrough_headers = [h.strip() for h in passthrough_headers_str.split(",") if h.strip()]
-        else:
-            passthrough_headers = None
 
         # Handle tools_include filter
         # Use [] (empty list) to signal "user cleared the filter" vs None (not provided)
