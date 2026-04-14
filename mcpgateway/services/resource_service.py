@@ -71,7 +71,7 @@ from mcpgateway.services.metrics_cleanup_service import delete_metrics_in_batche
 from mcpgateway.services.oauth_manager import OAuthManager
 from mcpgateway.services.observability_service import current_trace_id, ObservabilityService
 from mcpgateway.services.structured_logger import get_structured_logger
-from mcpgateway.utils.gateway_access import build_gateway_auth_headers, check_gateway_access
+from mcpgateway.utils.gateway_access import build_gateway_auth_headers, check_gateway_access, resolve_gateway_auth_headers
 from mcpgateway.utils.metrics_common import build_top_performers
 from mcpgateway.utils.pagination import unified_paginate
 from mcpgateway.utils.services_auth import decode_auth
@@ -2306,8 +2306,8 @@ class ResourceService(BaseService):
 
                             gateway = resource_db.gateway
 
-                            # Prepare headers with gateway auth
-                            headers = build_gateway_auth_headers(gateway)
+                            # Prepare headers with per-user credentials (falls back to gateway defaults)
+                            headers = await resolve_gateway_auth_headers(gateway, app_user_email=user, db=db)
 
                             # Use MCP SDK to connect and read resource
                             async with streamablehttp_client(url=gateway.url, headers=headers, timeout=settings.mcpgateway_direct_proxy_timeout) as (read_stream, write_stream, _get_session_id):
