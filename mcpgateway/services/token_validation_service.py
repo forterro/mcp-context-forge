@@ -168,11 +168,23 @@ def _validate_audience(claims: Dict[str, Any], oauth_config: Dict[str, Any], gat
     # 2. The OAuth client_id (Azure AD v1 tokens use client_id as audience
     #    when scopes are requested with {client_id}/.default)
     # 3. api://{client_id} (Azure AD app ID URI convention)
+    # 4. Resource IDs derived from {resource_id}/.default scope patterns
+    #    (Azure AD issues tokens with aud={resource_id} for these scopes)
     acceptable = {expected_audience}
     client_id = oauth_config.get("client_id")
     if client_id:
         acceptable.add(client_id)
         acceptable.add(f"api://{client_id}")
+
+    # Extract resource IDs from Azure AD /.default scope patterns.
+    # When a scope like "ea9ffc3e-.../.default" is configured, the token
+    # audience will be that resource ID, not the client_id.
+    for scope in oauth_config.get("scopes", []):
+        if isinstance(scope, str) and scope.endswith("/.default"):
+            resource_id = scope.removesuffix("/.default")
+            if resource_id:
+                acceptable.add(resource_id)
+                acceptable.add(f"api://{resource_id}")
 
     if any(a in acceptable for a in aud_list):
         result.audience_match = True
