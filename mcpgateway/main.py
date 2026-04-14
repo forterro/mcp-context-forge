@@ -106,6 +106,7 @@ from mcpgateway.plugins.framework import (
     shutdown_plugin_manager_factory,
 )
 from mcpgateway.plugins.framework.constants import PLUGIN_VIOLATION_CODE_MAPPING, PluginViolationCode, VALID_HTTP_STATUS_CODES
+from mcpgateway.routers.meta_router import router as meta_router
 from mcpgateway.routers.server_well_known import router as server_well_known_router
 from mcpgateway.routers.well_known import router as well_known_router
 from mcpgateway.schemas import (
@@ -11021,6 +11022,7 @@ app.include_router(server_well_known_router, prefix="/servers")
 app.include_router(metrics_router)
 app.include_router(tag_router)
 app.include_router(export_import_router)
+app.include_router(meta_router)
 
 # Tool plugin bindings router
 try:
