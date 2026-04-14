@@ -64,7 +64,6 @@ from starlette.types import Receive, Scope, Send
 # First-Party
 from mcpgateway.cache.global_config_cache import global_config_cache
 from mcpgateway.common.models import LogLevel
-from mcpgateway.common.validators import validate_meta_data as _validate_meta_data
 from mcpgateway.config import settings
 from mcpgateway.db import SessionLocal
 from mcpgateway.middleware.rbac import _ACCESS_DENIED_MSG
@@ -79,7 +78,7 @@ from mcpgateway.services.prompt_service import PromptService
 from mcpgateway.services.resource_service import ResourceService
 from mcpgateway.services.tool_service import ToolService
 from mcpgateway.transports.redis_event_store import RedisEventStore
-from mcpgateway.utils.gateway_access import build_gateway_auth_headers, check_gateway_access, extract_gateway_id_from_headers, GATEWAY_ID_HEADER
+from mcpgateway.utils.gateway_access import build_gateway_auth_headers, check_gateway_access, extract_gateway_id_from_headers, GATEWAY_ID_HEADER, resolve_gateway_auth_headers
 from mcpgateway.utils.internal_http import internal_loopback_base_url, internal_loopback_verify
 from mcpgateway.utils.log_sanitizer import sanitize_for_log
 from mcpgateway.utils.orjson_response import ORJSONResponse
@@ -1158,37 +1157,23 @@ async def _validate_streamable_session_access(
     return False, HTTP_403_FORBIDDEN, "Session owner metadata unavailable"
 
 
-def _build_paginated_params(meta: Optional[Any]) -> Optional[PaginatedRequestParams]:
-    """Build a ``PaginatedRequestParams`` carrying ``_meta`` when provided.
-
-    Args:
-        meta: Request metadata (_meta) from the original MCP request, or ``None``.
-
-    Returns:
-        A ``PaginatedRequestParams`` instance with ``_meta`` set, or ``None`` when *meta* is falsy.
-    """
-    if not meta:
-        return None
-    # CWE-532: log only key names, never values which may carry PII/tokens
-    logger.debug("Forwarding _meta to remote gateway (keys: %s)", sorted(meta.keys()) if isinstance(meta, dict) else type(meta).__name__)
-    return PaginatedRequestParams(_meta=meta)
-
-
-async def _proxy_list_tools_to_gateway(gateway: Any, request_headers: dict, user_context: dict, meta: Optional[Any] = None) -> List[types.Tool]:  # pylint: disable=unused-argument
+async def _proxy_list_tools_to_gateway(gateway: Any, request_headers: dict, user_context: dict, meta: Optional[Any] = None) -> List[types.Tool]:
     """Proxy tools/list request directly to remote MCP gateway using MCP SDK.
 
     Args:
         gateway: Gateway ORM instance
         request_headers: Request headers from client
-        user_context: User context (not used - _meta comes from MCP SDK)
+        user_context: User context dict with email for per-user credential lookup
         meta: Request metadata (_meta) from the original request
 
     Returns:
         List of Tool objects from remote server
     """
     try:
-        # Prepare headers with gateway auth
-        headers = build_gateway_auth_headers(gateway)
+        # Prepare headers with per-user credentials (falls back to gateway defaults)
+        user_email = user_context.get("email") if user_context else None
+        with SessionLocal() as db:
+            headers = await resolve_gateway_auth_headers(gateway, app_user_email=user_email, db=db)
 
         # Forward passthrough headers using shared utility (includes X-Upstream-Authorization rename)
         if request_headers:
@@ -1211,8 +1196,14 @@ async def _proxy_list_tools_to_gateway(gateway: Any, request_headers: dict, user
             async with ClientSession(read_stream, write_stream) as session:
                 await session.initialize()
 
+                # Prepare params with _meta if provided
+                params = None
+                if meta:
+                    params = PaginatedRequestParams(_meta=meta)
+                    logger.debug("Forwarding _meta to remote gateway: %s", meta)
+
                 # List tools with _meta forwarded
-                result = await session.list_tools(params=_build_paginated_params(meta))
+                result = await session.list_tools(params=params)
                 return result.tools
 
     except Exception as e:
@@ -1220,21 +1211,23 @@ async def _proxy_list_tools_to_gateway(gateway: Any, request_headers: dict, user
         return []
 
 
-async def _proxy_list_resources_to_gateway(gateway: Any, request_headers: dict, user_context: dict, meta: Optional[Any] = None) -> List[types.Resource]:  # pylint: disable=unused-argument
+async def _proxy_list_resources_to_gateway(gateway: Any, request_headers: dict, user_context: dict, meta: Optional[Any] = None) -> List[types.Resource]:
     """Proxy resources/list request directly to remote MCP gateway using MCP SDK.
 
     Args:
         gateway: Gateway ORM instance
         request_headers: Request headers from client
-        user_context: User context (not used - _meta comes from MCP SDK)
+        user_context: User context dict with email for per-user credential lookup
         meta: Request metadata (_meta) from the original request
 
     Returns:
         List of Resource objects from remote server
     """
     try:
-        # Prepare headers with gateway auth
-        headers = build_gateway_auth_headers(gateway)
+        # Prepare headers with per-user credentials (falls back to gateway defaults)
+        user_email = user_context.get("email") if user_context else None
+        with SessionLocal() as db:
+            headers = await resolve_gateway_auth_headers(gateway, app_user_email=user_email, db=db)
 
         # Forward passthrough headers using shared utility (includes X-Upstream-Authorization rename)
         if request_headers:
@@ -1254,16 +1247,21 @@ async def _proxy_list_resources_to_gateway(gateway: Any, request_headers: dict, 
 
         logger.info("Proxying resources/list to gateway %s at %s", gateway.id, gateway.url)
         if meta:
-            # CWE-532: log only key names, never values which may carry PII/tokens
-            logger.debug("Forwarding _meta to remote gateway (keys: %s)", sorted(meta.keys()) if isinstance(meta, dict) else type(meta).__name__)
+            logger.debug("Forwarding _meta to remote gateway: %s", meta)
 
         # Use MCP SDK to connect and list resources
         async with streamablehttp_client(url=gateway.url, headers=headers, timeout=settings.mcpgateway_direct_proxy_timeout) as (read_stream, write_stream, _get_session_id):
             async with ClientSession(read_stream, write_stream) as session:
                 await session.initialize()
 
+                # Prepare params with _meta if provided
+                params = None
+                if meta:
+                    params = PaginatedRequestParams(_meta=meta)
+                    logger.debug("Forwarding _meta to remote gateway: %s", meta)
+
                 # List resources with _meta forwarded
-                result = await session.list_resources(params=_build_paginated_params(meta))
+                result = await session.list_resources(params=params)
 
                 logger.info("Received %s resources from gateway %s", len(result.resources), gateway.id)
                 return result.resources
@@ -1273,21 +1271,23 @@ async def _proxy_list_resources_to_gateway(gateway: Any, request_headers: dict, 
         return []
 
 
-async def _proxy_read_resource_to_gateway(gateway: Any, resource_uri: str, user_context: dict, meta: Optional[Any] = None) -> List[Any]:  # pylint: disable=unused-argument
+async def _proxy_read_resource_to_gateway(gateway: Any, resource_uri: str, user_context: dict, meta: Optional[Any] = None) -> List[Any]:
     """Proxy resources/read request directly to remote MCP gateway using MCP SDK.
 
     Args:
         gateway: Gateway ORM instance
         resource_uri: URI of the resource to read
-        user_context: User context (not used - auth comes from gateway config)
+        user_context: User context dict with email for per-user credential lookup
         meta: Request metadata (_meta) from the original request
 
     Returns:
         List of content objects (TextResourceContents or BlobResourceContents) from remote server
     """
     try:
-        # Prepare headers with gateway auth
-        headers = build_gateway_auth_headers(gateway)
+        # Prepare headers with per-user credentials (falls back to gateway defaults)
+        user_email = user_context.get("email") if user_context else None
+        with SessionLocal() as db:
+            headers = await resolve_gateway_auth_headers(gateway, app_user_email=user_email, db=db)
 
         # Get request headers
         request_headers = request_headers_var.get()
@@ -1315,8 +1315,7 @@ async def _proxy_read_resource_to_gateway(gateway: Any, resource_uri: str, user_
 
         logger.info("Proxying resources/read for %s to gateway %s at %s", resource_uri, gateway.id, gateway.url)
         if meta:
-            # CWE-532: log only key names, never values which may carry PII/tokens
-            logger.debug("Forwarding _meta to remote gateway (keys: %s)", sorted(meta.keys()) if isinstance(meta, dict) else type(meta).__name__)
+            logger.debug("Forwarding _meta to remote gateway: %s", meta)
 
         # Use MCP SDK to connect and read resource
         async with streamablehttp_client(url=gateway.url, headers=headers, timeout=settings.mcpgateway_direct_proxy_timeout) as (read_stream, write_stream, _get_session_id):
@@ -1326,10 +1325,8 @@ async def _proxy_read_resource_to_gateway(gateway: Any, resource_uri: str, user_
                 # Prepare request params with _meta if provided
                 if meta:
                     # Create params and inject _meta
-                    # by_alias=True ensures the alias "_meta" key is written so
-                    # model_validate resolves it correctly (fixes CWE-20 silent drop)
                     request_params = ReadResourceRequestParams(uri=resource_uri)
-                    request_params_dict = request_params.model_dump(by_alias=True)
+                    request_params_dict = request_params.model_dump()
                     request_params_dict["_meta"] = meta
 
                     # Send request with _meta
@@ -2430,20 +2427,23 @@ async def read_resource(resource_uri: str) -> Union[str, bytes]:
                         return ""
 
                     # Direct proxy mode: forward request to remote MCP server
-                    # SECURITY: CWE-532 protection - Log only meta_data key names, NEVER values
-                    # Metadata may contain PII, authentication tokens, or sensitive context that
-                    # MUST NOT be written to logs. This is a critical security control.
-                    logger.debug(
-                        "Using direct_proxy mode for resources/read %s, server %s, gateway %s (from %s header), forwarding _meta keys: %s",
-                        resource_uri,
-                        server_id,
-                        gateway.id,
-                        GATEWAY_ID_HEADER,
-                        sorted(meta_data.keys()) if meta_data else None,
-                    )
-                    # CWE-400: validate _meta limits before network I/O (bypassed in direct-proxy branch)
-                    _validate_meta_data(meta_data)
-                    contents = await _proxy_read_resource_to_gateway(gateway, str(resource_uri), user_context, meta_data)
+                    # Get _meta from request context if available
+                    meta = None
+                    try:
+                        request_ctx = mcp_app.request_context
+                        meta = request_ctx.meta
+                        logger.info(
+                            "Using direct_proxy mode for resources/read %s, server %s, gateway %s (from %s header), forwarding _meta: %s",
+                            resource_uri,
+                            server_id,
+                            gateway.id,
+                            GATEWAY_ID_HEADER,
+                            meta,
+                        )
+                    except (LookupError, AttributeError) as e:
+                        logger.debug("No request context available for _meta extraction: %s", e)
+
+                    contents = await _proxy_read_resource_to_gateway(gateway, str(resource_uri), user_context, meta)
                     if contents:
                         # Return first content (text or blob)
                         first_content = contents[0]
