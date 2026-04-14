@@ -450,6 +450,8 @@ import {
   filterByRelationship,
   filterTeams,
   hideTeamEditModal,
+  addOidcGroupRow,
+  syncOidcGroupIds,
   leaveTeam,
   loadTeamSelectorDropdown,
   rejectJoinRequest,
@@ -466,6 +468,8 @@ Admin.displayPublicTeams = displayPublicTeams;
 Admin.filterByRelationship = filterByRelationship;
 Admin.filterTeams = filterTeams;
 Admin.hideTeamEditModal = hideTeamEditModal;
+Admin.addOidcGroupRow = addOidcGroupRow;
+Admin.syncOidcGroupIds = syncOidcGroupIds;
 Admin.leaveTeam = leaveTeam;
 Admin.loadTeamSelectorDropdown = loadTeamSelectorDropdown;
 Admin.rejectJoinRequest = rejectJoinRequest;
