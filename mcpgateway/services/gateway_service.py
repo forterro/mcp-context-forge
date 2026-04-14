@@ -2377,8 +2377,11 @@ class GatewayService(BaseService):  # pylint: disable=too-many-instance-attribut
                         client_key=update_client_key,
                     )
 
-                    # Apply tool include/exclude filters (fnmatch glob patterns)
-                    tools = _apply_tool_filters(tools, gateway.tools_include, gateway.tools_exclude)
+                    # Apply NEW tool filters so this edit takes effect immediately
+                    # (must read from gateway_update BEFORE persisting to gateway)
+                    effective_include = gateway_update.tools_include if gateway_update.tools_include is not None else gateway.tools_include
+                    effective_exclude = gateway_update.tools_exclude if gateway_update.tools_exclude is not None else gateway.tools_exclude
+                    tools = _apply_tool_filters(tools, effective_include, effective_exclude)
 
                     new_tool_names = [tool.name for tool in tools]
                     new_resource_uris = [resource.uri for resource in resources]
@@ -2512,10 +2515,12 @@ class GatewayService(BaseService):  # pylint: disable=too-many-instance-attribut
                     gateway.gateway_mode = gateway_update.gateway_mode
 
                 # Update tool filters if provided
+                # An empty list [] means "user cleared the filter" → store None
+                # None means "not provided in this update" → keep existing value
                 if hasattr(gateway_update, "tools_include") and gateway_update.tools_include is not None:
-                    gateway.tools_include = gateway_update.tools_include
+                    gateway.tools_include = gateway_update.tools_include if gateway_update.tools_include else None
                 if hasattr(gateway_update, "tools_exclude") and gateway_update.tools_exclude is not None:
-                    gateway.tools_exclude = gateway_update.tools_exclude
+                    gateway.tools_exclude = gateway_update.tools_exclude if gateway_update.tools_exclude else None
 
                 # Update metadata fields
                 gateway.updated_at = datetime.now(timezone.utc)

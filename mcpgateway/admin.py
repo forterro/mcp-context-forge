@@ -12370,8 +12370,9 @@ async def admin_edit_gateway(
             passthrough_headers = None
 
         # Handle tools_include filter
+        # Use [] (empty list) to signal "user cleared the filter" vs None (not provided)
         tools_include_str = str(form.get("tools_include", ""))
-        tools_include: Optional[List[str]] = None
+        tools_include: Optional[List[str]] = []
         if tools_include_str and tools_include_str.strip():
             try:
                 tools_include = orjson.loads(tools_include_str)
@@ -12380,7 +12381,7 @@ async def admin_edit_gateway(
 
         # Handle tools_exclude filter
         tools_exclude_str = str(form.get("tools_exclude", ""))
-        tools_exclude: Optional[List[str]] = None
+        tools_exclude: Optional[List[str]] = []
         if tools_exclude_str and tools_exclude_str.strip():
             try:
                 tools_exclude = orjson.loads(tools_exclude_str)
