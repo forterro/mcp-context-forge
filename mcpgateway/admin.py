@@ -3082,9 +3082,14 @@ async def admin_edit_server(
         visibility = str(form.get("visibility", "private"))
         user_email = get_user_email(user)
 
-        # Do NOT read team_id from the form — the frontend team selector may
-        # point to a different team than the entity's actual owner.  The service
-        # layer preserves the existing team_id via check_resource_ownership.
+        # Extract team_id from form and verify user membership
+        team_id_raw = form.get("team_id", None)
+        team_id = str(team_id_raw) if team_id_raw is not None else None
+        team_service = TeamManagementService(db)
+        try:
+            team_id = await team_service.verify_team_for_user(user_email, team_id)
+        except PermissionError as ex:
+            return ORJSONResponse(content={"message": str(ex), "success": False}, status_code=403)
 
         mod_metadata = MetadataCapture.extract_modification_metadata(request, user, 0)
 
@@ -3130,7 +3135,7 @@ async def admin_edit_server(
             associated_prompts=",".join(str(x) for x in associated_prompts_list),
             tags=tags,
             visibility=visibility,
-            team_id=None,  # Preserve existing team — never override from form
+            team_id=team_id,
             owner_email=user_email,
             oauth_enabled=oauth_enabled,
             oauth_config=oauth_config,
@@ -11809,9 +11814,14 @@ async def admin_edit_tool(
 
     user_email = get_user_email(user)
 
-    # Do NOT read team_id from the form — the frontend team selector may
-    # point to a different team than the entity's actual owner.  The service
-    # layer preserves the existing team_id via check_resource_ownership.
+    # Extract team_id from form and verify user membership
+    team_id_raw = form.get("team_id", None)
+    team_id = str(team_id_raw) if team_id_raw is not None else None
+    team_service = TeamManagementService(db)
+    try:
+        team_id = await team_service.verify_team_for_user(user_email, team_id)
+    except PermissionError as ex:
+        return ORJSONResponse(content={"message": str(ex), "success": False}, status_code=403)
 
     headers_raw2 = form.get("headers")
     input_schema_raw2 = form.get("input_schema")
@@ -11824,6 +11834,11 @@ async def admin_edit_tool(
         input_schema = orjson.loads(input_schema_raw2 if isinstance(input_schema_raw2, str) and input_schema_raw2 else "{}")
         output_schema = orjson.loads(output_schema_raw2) if isinstance(output_schema_raw2, str) and output_schema_raw2 else None
         annotations = orjson.loads(annotations_raw2 if isinstance(annotations_raw2, str) and annotations_raw2 else "{}")
+        query_mapping = orjson.loads(form.get("query_mapping") or "{}")
+        header_mapping = orjson.loads(form.get("header_mapping") or "{}")
+        allowlist = orjson.loads(form.get("allowlist") or "[]")
+        plugin_chain_pre = orjson.loads(form.get("plugin_chain_pre") or "[]")
+        plugin_chain_post = orjson.loads(form.get("plugin_chain_post") or "[]")
     except orjson.JSONDecodeError as ex:
         LOGGER.error(f"Invalid JSON in form field: {str(ex)}")
         return ORJSONResponse(
@@ -11846,7 +11861,14 @@ async def admin_edit_tool(
         "tags": tags,
         "visibility": visibility,
         "owner_email": user_email,
-        "team_id": None,  # Preserve existing team — never override from form
+        "team_id": team_id,
+        "query_mapping": query_mapping,
+        "header_mapping": header_mapping,
+        "timeout_ms": int(form.get("timeout_ms")) if form.get("timeout_ms") and form.get("timeout_ms").strip() else None,
+        "expose_passthrough": form.get("expose_passthrough", "true"),
+        "allowlist": allowlist,
+        "plugin_chain_pre": plugin_chain_pre,
+        "plugin_chain_post": plugin_chain_post,
     }
     # Only include integration_type if it's provided (not disabled in form)
     if "integrationType" in form:
@@ -12540,9 +12562,14 @@ async def admin_edit_gateway(
 
         user_email = get_user_email(user)
 
-        # Do NOT read team_id from the form — the frontend team selector may
-        # point to a different team than the entity's actual owner.  The service
-        # layer preserves the existing team_id via check_resource_ownership.
+        # Extract team_id from form and verify user membership
+        team_id_raw = form.get("team_id", None)
+        team_id = str(team_id_raw) if team_id_raw is not None else None
+        team_service = TeamManagementService(db)
+        try:
+            team_id = await team_service.verify_team_for_user(user_email, team_id)
+        except PermissionError as ex:
+            return ORJSONResponse(content={"message": str(ex), "success": False}, status_code=403)
 
         # Read auth_type from form — always present in HTML form submissions
         auth_type_from_form = str(form.get("auth_type", ""))
@@ -12572,7 +12599,7 @@ async def admin_edit_gateway(
             oauth_config=oauth_config,
             visibility=visibility,
             owner_email=user_email,
-            team_id=None,  # Preserve existing team — never override from form
+            team_id=team_id,
         )
 
         mod_metadata = MetadataCapture.extract_modification_metadata(request, user, 0)
@@ -12916,9 +12943,14 @@ async def admin_edit_resource(
 
     user_email = get_user_email(user)
 
-    # Do NOT read team_id from the form — the frontend team selector may
-    # point to a different team than the entity's actual owner.  The service
-    # layer preserves the existing team_id via check_resource_ownership.
+    # Extract team_id from form and verify user membership
+    team_id_raw = form.get("team_id", None)
+    team_id = str(team_id_raw) if team_id_raw is not None else None
+    team_service = TeamManagementService(db)
+    try:
+        team_id = await team_service.verify_team_for_user(user_email, team_id)
+    except PermissionError as ex:
+        return ORJSONResponse(content={"message": str(ex), "success": False}, status_code=403)
 
     # Parse tags from comma-separated string
     tags_str = str(form.get("tags", ""))
@@ -12946,7 +12978,7 @@ async def admin_edit_resource(
             uri_template=uri_template,
             tags=tags,
             visibility=visibility,
-            team_id=None,  # Preserve existing team — never override from form
+            team_id=team_id,
             owner_email=user_email,
         )
         LOGGER.info(f"ResourceUpdate object created: {resource}")
@@ -13292,9 +13324,14 @@ async def admin_edit_prompt(
     visibility = str(form.get("visibility", "private"))
     user_email = get_user_email(user)
 
-    # Do NOT read team_id from the form — the frontend team selector may
-    # point to a different team than the entity's actual owner.  The service
-    # layer preserves the existing team_id via check_resource_ownership.
+    # Extract team_id from form and verify user membership
+    team_id_raw = form.get("team_id", None)
+    team_id = str(team_id_raw) if team_id_raw is not None else None
+    team_service = TeamManagementService(db)
+    try:
+        team_id = await team_service.verify_team_for_user(user_email, team_id)
+    except PermissionError as ex:
+        return ORJSONResponse(content={"message": str(ex), "success": False}, status_code=403)
 
     # Parse tags from comma-separated string
     tags_str = str(form.get("tags", ""))
@@ -13312,7 +13349,7 @@ async def admin_edit_prompt(
             arguments=arguments,
             tags=tags,
             visibility=visibility,
-            team_id=None,  # Preserve existing team — never override from form
+            team_id=team_id,
             owner_email=user_email,
         )
         await prompt_service.update_prompt(
@@ -15847,9 +15884,14 @@ async def admin_edit_a2a_agent(
 
         user_email = get_user_email(user)
 
-        # Do NOT read team_id from the form — the frontend team selector may
-        # point to a different team than the entity's actual owner.  The service
-        # layer preserves the existing team_id via check_resource_ownership.
+        # Extract team_id from form and verify user membership
+        team_id_raw = form.get("team_id", None)
+        team_id = str(team_id_raw) if team_id_raw is not None else None
+        team_service = TeamManagementService(db)
+        try:
+            team_id = await team_service.verify_team_for_user(user_email, team_id)
+        except PermissionError as ex:
+            return ORJSONResponse(content={"message": str(ex), "success": False}, status_code=403)
 
         # Read auth_type from form — always present in HTML form submissions
         auth_type_from_form = str(form.get("auth_type", ""))
@@ -15877,7 +15919,7 @@ async def admin_edit_a2a_agent(
             passthrough_headers=passthrough_headers,
             oauth_config=oauth_config,
             visibility=visibility,
-            team_id=None,  # Preserve existing team — never override from form
+            team_id=team_id,
             owner_email=user_email,
             capabilities=capabilities,  # Optional, not editable via UI
             config=config,  # Optional, not editable via UI
