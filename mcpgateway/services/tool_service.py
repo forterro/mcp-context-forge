@@ -89,7 +89,7 @@ from mcpgateway.services.team_management_service import TeamManagementService
 from mcpgateway.utils.correlation_id import get_correlation_id
 from mcpgateway.utils.create_slug import slugify
 from mcpgateway.utils.display_name import generate_display_name
-from mcpgateway.utils.gateway_access import build_gateway_auth_headers, check_gateway_access, extract_gateway_id_from_headers
+from mcpgateway.utils.gateway_access import build_gateway_access_filter, build_gateway_auth_headers, check_gateway_access, extract_gateway_id_from_headers
 from mcpgateway.utils.metrics_common import build_top_performers
 from mcpgateway.utils.pagination import decode_cursor, encode_cursor, unified_paginate
 from mcpgateway.utils.passthrough_headers import compute_passthrough_headers_cached
@@ -2752,6 +2752,10 @@ class ToolService(BaseService):
                     access_conditions.append(and_(DbTool.team_id.in_(team_ids), DbTool.visibility.in_(["team", "public"])))
                 query = query.where(or_(*access_conditions))
 
+                # Gateway-level access control: tools from team-scoped or private
+                # gateways must only be visible to authorized users
+                query = query.where(build_gateway_access_filter(DbTool.gateway_id, user_email, team_ids, is_public_only_token))
+
             # Execute the query - team names are loaded via joinedload(DbTool.email_team)
             tools = db.execute(query).scalars().all()
 
@@ -2841,6 +2845,9 @@ class ToolService(BaseService):
                 if team_ids:
                     access_conditions.append(and_(DbTool.team_id.in_(team_ids), DbTool.visibility.in_(["team", "public"])))
                 query = query.where(or_(*access_conditions))
+
+                # Gateway-level access control
+                query = query.where(build_gateway_access_filter(DbTool.gateway_id, user_email, team_ids, is_public_only_token))
 
             rows = db.execute(query).mappings().all()
             db.commit()
