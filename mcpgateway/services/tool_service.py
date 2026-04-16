@@ -3763,14 +3763,16 @@ class ToolService(BaseService):
 
                     with fresh_db_session() as token_db:
                         token_storage = TokenStorageService(token_db)
-                        if not app_user_email:
+                        effective_email = app_user_email or user_email
+                        if not effective_email:
                             raise ToolInvocationError(f"User authentication required for OAuth-protected gateway '{gateway_name}'. Please ensure you are authenticated.")
-                        access_token = await token_storage.get_user_token(gateway_id_str, app_user_email)
+                        access_token = await token_storage.get_user_token(gateway_id_str, effective_email)
 
                     if access_token:
                         headers = {"Authorization": f"Bearer {access_token}"}
                     else:
-                        raise ToolInvocationError(f"Please authorize {gateway_name} first. Visit /oauth/authorize/{gateway_id_str} to complete OAuth flow.")
+                        authorize_url = f"{str(settings.app_domain).rstrip('/')}{settings.app_root_path}/oauth/authorize/{gateway_id_str}"
+                        raise ToolInvocationError(f"Please authorize {gateway_name} first. Visit {authorize_url} to complete OAuth flow.")
                 except Exception as e:
                     logger.error(f"Failed to obtain stored OAuth token for gateway {gateway_name}: {e}")
                     raise ToolInvocationError(f"OAuth token retrieval failed for gateway: {str(e)}")
@@ -4869,16 +4871,18 @@ class ToolService(BaseService):
                                     token_storage = TokenStorageService(token_db)
 
                                     # Get user-specific OAuth token
-                                    if not app_user_email:
+                                    effective_email = app_user_email or user_email
+                                    if not effective_email:
                                         raise ToolInvocationError(f"User authentication required for OAuth-protected gateway '{gateway_name}'. Please ensure you are authenticated.")
 
-                                    access_token = await token_storage.get_user_token(gateway_id_str, app_user_email)
+                                    access_token = await token_storage.get_user_token(gateway_id_str, effective_email)
 
                                 if access_token:
                                     headers = {"Authorization": f"Bearer {access_token}"}
                                 else:
                                     # User hasn't authorized this gateway yet
-                                    raise ToolInvocationError(f"Please authorize {gateway_name} first. Visit /oauth/authorize/{gateway_id_str} to complete OAuth flow.")
+                                    authorize_url = f"{str(settings.app_domain).rstrip('/')}{settings.app_root_path}/oauth/authorize/{gateway_id_str}"
+                                    raise ToolInvocationError(f"Please authorize {gateway_name} first. Visit {authorize_url} to complete OAuth flow.")
                             except Exception as e:
                                 logger.error(f"Failed to obtain stored OAuth token for gateway {gateway_name}: {e}")
                                 raise ToolInvocationError(f"OAuth token retrieval failed for gateway: {str(e)}")
