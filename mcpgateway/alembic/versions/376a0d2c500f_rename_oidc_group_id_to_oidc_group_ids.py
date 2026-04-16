@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Rename oidc_group_id to oidc_group_ids (JSON list)
 
-Revision ID: a1b2c3d4e5f6
+Revision ID: 376a0d2c500f
 Revises: f7a2b1c3d4e5
 Create Date: 2026-04-15 12:00:00.000000
 
@@ -19,7 +19,7 @@ import sqlalchemy as sa
 from sqlalchemy import inspect, text
 
 # revision identifiers, used by Alembic.
-revision: str = "a1b2c3d4e5f6"
+revision: str = "376a0d2c500f"
 down_revision: Union[str, Sequence[str], None] = "f7a2b1c3d4e5"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
