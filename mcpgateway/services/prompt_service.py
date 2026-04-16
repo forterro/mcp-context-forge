@@ -58,7 +58,7 @@ from mcpgateway.services.observability_service import current_trace_id, Observab
 from mcpgateway.services.structured_logger import get_structured_logger
 from mcpgateway.services.team_management_service import TeamManagementService
 from mcpgateway.utils.create_slug import slugify
-from mcpgateway.utils.gateway_access import build_gateway_auth_headers, resolve_gateway_auth_headers
+from mcpgateway.utils.gateway_access import build_gateway_access_filter, build_gateway_auth_headers, resolve_gateway_auth_headers
 from mcpgateway.utils.metrics_common import build_top_performers
 from mcpgateway.utils.pagination import unified_paginate
 from mcpgateway.utils.services_auth import decode_auth
@@ -1607,6 +1607,9 @@ class PromptService(BaseService):
                 if team_ids:
                     access_conditions.append(and_(DbPrompt.team_id.in_(team_ids), DbPrompt.visibility.in_(["team", "public"])))
                 query = query.where(or_(*access_conditions))
+
+                # Gateway-level access control
+                query = query.where(build_gateway_access_filter(DbPrompt.gateway_id, user_email, team_ids, is_public_only_token))
 
             # Cursor-based pagination logic can be implemented here in the future.
             logger.debug(cursor)

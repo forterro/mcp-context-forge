@@ -11,10 +11,12 @@ in direct_proxy mode, ensuring consistent RBAC enforcement across the codebase.
 
 # Standard
 import logging
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 # Third-Party
+from sqlalchemy import and_, exists, or_, select
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import InstrumentedAttribute
 
 # First-Party
 from mcpgateway.db import Gateway as DbGateway
@@ -117,6 +119,70 @@ async def check_gateway_access(
 
     # Default: deny access
     return False
+
+
+def build_gateway_access_filter(
+    entity_gateway_id_column: InstrumentedAttribute,
+    user_email: Optional[str],
+    team_ids: List[str],
+    is_public_only_token: bool,
+) -> Any:
+    """Build a SQLAlchemy WHERE clause for gateway-level access filtering.
+
+    Ensures that items (tools, resources, prompts) from team-scoped or private
+    gateways are only visible to authorized users. Items without a gateway
+    (standalone) bypass this check.
+
+    This is the SQL-level counterpart of ``check_gateway_access()`` and must be
+    kept in sync with its logic.
+
+    Args:
+        entity_gateway_id_column: The ``gateway_id`` column of the entity being
+            queried (e.g. ``DbTool.gateway_id``).
+        user_email: Email of the requesting user.
+        team_ids: Resolved list of team IDs for the user (from token or DB).
+        is_public_only_token: True when the token has an empty teams array,
+            meaning only public resources should be accessible.
+
+    Returns:
+        A SQLAlchemy clause element to be used in ``query.where(...)``.
+    """
+    gateway_conditions: list[Any] = [
+        # Standalone items (no gateway) always pass
+        entity_gateway_id_column.is_(None),
+        # Public gateways are accessible by all
+        exists(
+            select(DbGateway.id).where(
+                DbGateway.id == entity_gateway_id_column,
+                DbGateway.visibility == "public",
+            )
+        ),
+    ]
+
+    # Owner can access their own gateways (not for public-only tokens)
+    if not is_public_only_token and user_email:
+        gateway_conditions.append(
+            exists(
+                select(DbGateway.id).where(
+                    DbGateway.id == entity_gateway_id_column,
+                    DbGateway.owner_email == user_email,
+                )
+            )
+        )
+
+    # Team members can access team-scoped gateways
+    if team_ids:
+        gateway_conditions.append(
+            exists(
+                select(DbGateway.id).where(
+                    DbGateway.id == entity_gateway_id_column,
+                    DbGateway.team_id.in_(team_ids),
+                    DbGateway.visibility.in_(["team", "public"]),
+                )
+            )
+        )
+
+    return or_(*gateway_conditions)
 
 
 def build_gateway_auth_headers(gateway: DbGateway) -> Dict[str, str]:

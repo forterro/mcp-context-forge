@@ -71,7 +71,7 @@ from mcpgateway.services.metrics_cleanup_service import delete_metrics_in_batche
 from mcpgateway.services.oauth_manager import OAuthManager
 from mcpgateway.services.observability_service import current_trace_id, ObservabilityService
 from mcpgateway.services.structured_logger import get_structured_logger
-from mcpgateway.utils.gateway_access import build_gateway_auth_headers, check_gateway_access, resolve_gateway_auth_headers
+from mcpgateway.utils.gateway_access import build_gateway_access_filter, build_gateway_auth_headers, check_gateway_access, resolve_gateway_auth_headers
 from mcpgateway.utils.metrics_common import build_top_performers
 from mcpgateway.utils.pagination import unified_paginate
 from mcpgateway.utils.services_auth import decode_auth
@@ -1432,6 +1432,9 @@ class ResourceService(BaseService):
                 if team_ids:
                     access_conditions.append(and_(DbResource.team_id.in_(team_ids), DbResource.visibility.in_(["team", "public"])))
                 query = query.where(or_(*access_conditions))
+
+                # Gateway-level access control
+                query = query.where(build_gateway_access_filter(DbResource.gateway_id, user_email, team_ids, is_public_only_token))
 
             # Cursor-based pagination logic can be implemented here in the future.
             resources = db.execute(query).scalars().all()
