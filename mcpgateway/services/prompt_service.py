@@ -2244,6 +2244,8 @@ class PromptService(BaseService):
                     target_team_id = prompt_update.team_id if prompt_update.team_id is not None else prompt.team_id
                     _validate_prompt_team_assignment(db, user_email, target_team_id)
                 prompt.visibility = prompt_update.visibility
+            if prompt_update.team_id is not None:
+                prompt.team_id = prompt_update.team_id
 
             # Update tags if provided
             if prompt_update.tags is not None:
