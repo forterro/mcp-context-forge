@@ -1984,6 +1984,10 @@ class ResourceService(BaseService):
                                         gateway_id=gateway_id,
                                     ) as upstream:
                                         resource_response = await _read_resource_with_meta(upstream.session, uri, meta_data)
+                                        return getattr(getattr(resource_response, "contents")[0], "text")
+                                else:
+                                    # Fallback: per-call session when no downstream session id is in scope.
+                                    async with sse_client(url=server_url, headers=authentication, timeout=settings.health_check_timeout, httpx_client_factory=_get_httpx_client_factory) as (
                                         read_stream,
                                         write_stream,
                                     ):
@@ -2060,6 +2064,10 @@ class ResourceService(BaseService):
                                         gateway_id=gateway_id,
                                     ) as upstream:
                                         resource_response = await _read_resource_with_meta(upstream.session, uri, meta_data)
+                                        return getattr(getattr(resource_response, "contents")[0], "text")
+                                else:
+                                    # Fallback: per-call session when no downstream session id is in scope.
+                                    async with streamablehttp_client(url=server_url, headers=authentication, timeout=settings.health_check_timeout, httpx_client_factory=_get_httpx_client_factory) as (
                                         read_stream,
                                         write_stream,
                                         _get_session_id,
