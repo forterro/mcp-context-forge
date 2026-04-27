@@ -20,16 +20,17 @@ This feature unblocks MyForterro AI agent and other headless services from authe
 
 ### Critical Dependencies ✅
 
+**Branch Base**: `release/1.0.0-RC4-validation` (commit `f0d29d4cb`)
+
 | Dependency | PR/Commit | Status | Why Required |
 |------------|-----------|--------|-------------|
-| `feat/token-endpoint-auth-method-upstream` | Commit `28b0945d7` | **MERGED** on release/1.0.0-RC4 | Provides `client_secret_basic` token endpoint auth (RFC 6749 Section 2.3), required for client credentials exchange |
-| OAuth JWT infrastructure | Upstream `main` | **AVAILABLE** | JWT creation/validation utilities (`mcpgateway/utils/create_jwt_token.py`, `verify_credentials.py`) |
-| Per-user credential lookup | Upstream `main` | **AVAILABLE** | `resolve_gateway_auth_headers()` for agent credential resolution |
-| Service account DB model | Upstream `main` | **AVAILABLE** | Service account metadata and secrets storage |
+| MCP OAuth proxy infrastructure | `fix/virtual-server-dcr-bypass-upstream` | **MERGED** on branch | Provides OAuth endpoint structure + `mcp_oauth_router` for adding new token endpoints |
+| `feat/token-endpoint-auth-method-upstream` | Commit `28b0945d7` | **MERGED** on branch | Provides `client_secret_basic` token endpoint auth (RFC 6749 Section 2.3), required for client credentials exchange |
+| OAuth JWT infrastructure | Available on branch | **AVAILABLE** | JWT creation/validation utilities (`mcpgateway/utils/create_jwt_token.py`, `verify_credentials.py`) |
+| Per-user credential lookup | Available on branch | **AVAILABLE** | `resolve_gateway_auth_headers()` for agent credential resolution |
+| Service account DB model | Available on branch | **AVAILABLE** | Service account metadata and secrets storage (A2A agent model) |
 
-**Note**: This branch is based on `upstream/main` which **does NOT include** `feat/token-endpoint-auth-method-upstream`. 
-
-**Action Required**: Before merging this PR to `upstream/main`, ensure `feat/token-endpoint-auth-method-upstream` is merged first, OR merge this branch onto `release/1.0.0-RC4-validation` instead.
+**Rationale**: This branch is rebased onto `release/1.0.0-RC4-validation` (integration branch) which includes all 17 PRs with complete OAuth infrastructure. Attempting to base on `upstream/main` would require waiting for all upstream PRs to be accepted, blocking the feature.
 
 ### Soft Dependencies (Already Available)
 
