@@ -340,10 +340,10 @@ class Settings(BaseSettings):
         description="Allow unauthenticated requests to receive platform-admin context when AUTH_REQUIRED=false (dangerous; development-only override).",
     )
     # Session token configuration (short-lived for security)
-    token_expiry: int = Field(default=20, ge=5, le=1440, description="Session token expiry in minutes (5-1440). Recommended: 5-20 minutes for security.")  # 20 minutes (was 10080 = 70 days)
+    token_expiry: int = Field(default=20, ge=5, le=10080, description="Session token expiry in minutes (5-10080). Recommended: 5-20 minutes for security.")  # 20 minutes default
 
     # Idle timeout configuration
-    token_idle_timeout: int = Field(default=60, ge=5, le=1440, description="Maximum idle time in minutes before token requires refresh (5-1440).")  # 60 minutes
+    token_idle_timeout: int = Field(default=60, ge=5, le=10080, description="Maximum idle time in minutes before token requires refresh (5-10080).")  # 60 minutes
 
     # Token blocklist cleanup
     token_blocklist_cleanup_hours: int = Field(default=24, ge=1, le=168, description="Hours to retain expired tokens in blocklist before cleanup (1-168).")
