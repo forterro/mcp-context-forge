@@ -232,3 +232,71 @@ def build_gateway_auth_headers(gateway: DbGateway) -> Dict[str, str]:
                 headers["Authorization"] = auth_header
 
     return headers
+
+
+async def resolve_gateway_auth_headers(
+    gateway: DbGateway,
+    app_user_email: Optional[str] = None,
+    db: Optional[Session] = None,
+) -> Dict[str, str]:
+    """Resolve auth headers for gateway requests, preferring per-user credentials.
+
+    Security-critical: ensures per-user credential isolation. When a user has
+    stored personal credentials (API key, bearer token, basic auth) or OAuth
+    tokens for a gateway, those MUST be used instead of the gateway defaults.
+
+    Lookup order:
+        1. Per-user personal credential (UserGatewayCredential table)
+        2. Per-user OAuth token (OAuthToken table)
+        3. Gateway-level default credentials (gateway.auth_value)
+
+    Args:
+        gateway: Gateway ORM object with auth configuration.
+        app_user_email: Email of the requesting user (None skips per-user lookup).
+        db: Database session for per-user credential lookup.
+
+    Returns:
+        Dictionary of HTTP headers with Authorization header.
+    """
+    if app_user_email and db:
+        # 1. Check per-user personal credentials (API keys, bearer tokens, basic auth)
+        try:
+            from mcpgateway.services.credential_storage_service import CredentialStorageService  # pylint: disable=import-outside-toplevel
+
+            cred_service = CredentialStorageService(db)
+            record = await cred_service.get_credential_record(gateway.id, app_user_email)
+            if record:
+                decrypted = await cred_service.get_credential(gateway.id, app_user_email)
+                if decrypted:
+                    if record.credential_type in ("bearer_token", "api_key"):
+                        logger.debug(
+                            "Using per-user %s credential for gateway %s, user %s",
+                            record.credential_type, gateway.id, app_user_email,
+                        )
+                        return {"Authorization": f"Bearer {decrypted}"}
+                    elif record.credential_type == "basic_auth":
+                        logger.debug(
+                            "Using per-user basic_auth credential for gateway %s, user %s",
+                            gateway.id, app_user_email,
+                        )
+                        return {"Authorization": f"Basic {decrypted}"}
+        except Exception:
+            logger.exception("Error looking up per-user credential for gateway %s", gateway.id)
+
+        # 2. Check per-user OAuth tokens
+        try:
+            from mcpgateway.services.token_storage_service import TokenStorageService  # pylint: disable=import-outside-toplevel
+
+            token_service = TokenStorageService(db)
+            oauth_token = await token_service.get_user_token(gateway.id, app_user_email)
+            if oauth_token:
+                logger.debug(
+                    "Using per-user OAuth token for gateway %s, user %s",
+                    gateway.id, app_user_email,
+                )
+                return {"Authorization": f"Bearer {oauth_token}"}
+        except Exception:
+            logger.exception("Error looking up per-user OAuth token for gateway %s", gateway.id)
+
+    # 3. Fall back to gateway-level default credentials
+    return build_gateway_auth_headers(gateway)
