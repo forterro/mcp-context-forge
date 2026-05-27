@@ -862,9 +862,10 @@ export const editServer = async function (serverId) {
       if (oauthClientIdField) {
         oauthClientIdField.value = server.oauthConfig.client_id || "";
       }
+      // Clear client_secret field (password field — never pre-filled with actual secret)
       const oauthClientSecretField = safeGetElement("edit-server-oauth-client-secret");
       if (oauthClientSecretField) {
-        oauthClientSecretField.value = server.oauthConfig.client_secret ? MASKED_AUTH_VALUE : "";
+        oauthClientSecretField.value = "";
       }
     } else {
       // Clear OAuth config fields when no config exists
