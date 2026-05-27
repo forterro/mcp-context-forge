@@ -236,6 +236,8 @@ RUN if [ "$(uname -m)" = "s390x" ] || [ "$(uname -m)" = "ppc64le" ]; then \
 # the heavy venv install so those changes don't invalidate the dep layer.
 # ----------------------------------------------------------------------------
 COPY pyproject.toml /app/
+# Minimal package stub so setuptools can resolve dependencies without full source
+RUN mkdir -p /app/mcpgateway && echo '"""ContextForge Gateway."""' > /app/mcpgateway/__init__.py
 COPY --from=rust-builder /build/native-extension-wheels/ /tmp/local-native-extension-wheels/
 COPY --chmod=0755 scripts/verify-native-extensions.py /tmp/verify-native-extensions.py
 
@@ -262,7 +264,7 @@ RUN set -euo pipefail \
         /app/.venv/bin/pip install --no-cache-dir ".[redis,observability,granian,plugins,llmchat]" \
         && /app/.venv/bin/pip install --no-cache-dir "psycopg[c]>=3.3.3"; \
     else \
-        /app/.venv/bin/uv pip install ".[redis,postgres,observability,granian,plugins,llmchat]"; \
+        /app/.venv/bin/pip install --no-cache-dir ".[redis,postgres,observability,granian,plugins,llmchat]"; \
     fi \
     && echo "✅ Plugins installed from PyPI via [plugins] extra" \
     && if [ "$ENABLE_RUST" = "true" ] && ls "/tmp/local-native-extension-wheels/"*.whl 1> /dev/null 2>&1; then \
