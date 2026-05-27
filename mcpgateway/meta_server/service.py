@@ -1335,6 +1335,17 @@ class MetaServerService:
                         message=f"Gateway '{gateway_name}' not found",
                     ).model_dump(by_alias=True)
 
+                # Enforce visibility: deny access to team-scoped gateways user is not a member of
+                from mcpgateway.utils.gateway_access import check_gateway_access  # pylint: disable=import-outside-toplevel
+
+                if not await check_gateway_access(db, gateway, effective_email, token_teams):
+                    return AuthorizeGatewayResponse(
+                        gateway_id="",
+                        gateway_name=gateway_name,
+                        status="not_found",
+                        message=f"Gateway '{gateway_name}' not found",
+                    ).model_dump(by_alias=True)
+
                 gateway_id = gateway.id
 
                 # Check if gateway has OAuth config
@@ -1432,12 +1443,19 @@ class MetaServerService:
                     )
                 ).scalars().all()
 
+                # Filter gateways by visibility/team access before checking auth status
+                from mcpgateway.utils.gateway_access import check_gateway_access  # pylint: disable=import-outside-toplevel
+
                 token_service = TokenStorageService(db)
                 gateway_statuses = []
                 pending_count = 0
 
                 for gw in gateways:
                     if not gw.oauth_config or gw.oauth_config.get("grant_type") != "authorization_code":
+                        continue
+
+                    # Enforce visibility: public gateways for all, team gateways only for members
+                    if not await check_gateway_access(db, gw, effective_email, token_teams):
                         continue
 
                     gw_status = "authorization_required"
