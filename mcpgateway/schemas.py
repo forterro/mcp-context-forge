@@ -8625,3 +8625,22 @@ class A2AAgentPluginBindingListResponse(BaseModelWithConfigDict):
 
     bindings: List[A2AAgentPluginBindingResponse] = Field(default_factory=list, description="List of A2A agent plugin bindings")
     total: int = Field(0, description="Total number of bindings returned")
+
+
+class ToolSearchResult(BaseModelWithConfigDict):
+    """Response schema for a single tool search result with relevance score."""
+
+    tool_name: str = Field(..., description="Tool name")
+    description: Optional[str] = Field(None, description="Tool description")
+    similarity_score: float = Field(..., ge=0.0, le=1.0, description="Similarity score (0-1)")
+    server_id: Optional[str] = Field(None, description="Server ID the tool belongs to")
+    server_name: Optional[str] = Field(None, description="Server name the tool belongs to")
+    tags: List[str] = Field(default_factory=list, description="Tool tags")
+
+
+class SemanticSearchResponse(BaseModelWithConfigDict):
+    """Response schema for semantic tool search."""
+
+    results: List[ToolSearchResult] = Field(..., description="Ranked list of matching tools")
+    query: str = Field(..., description="Original search query")
+    total_results: int = Field(0, description="Number of results returned")
