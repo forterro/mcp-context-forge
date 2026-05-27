@@ -315,12 +315,13 @@ class PromptService(BaseService):
         """
         return bool(getattr(prompt, "gateway_id", None)) and not bool(getattr(prompt, "template", ""))
 
-    async def _fetch_gateway_prompt_result(self, prompt: DbPrompt, arguments: Optional[Dict[str, str]], user_identity: Optional[str]) -> PromptResult:
+    async def _fetch_gateway_prompt_result(self, prompt: DbPrompt, arguments: Optional[Dict[str, str]], meta_data: Optional[Dict[str, Any]] = None, user_identity: Optional[str] = None) -> PromptResult:
         """Fetch a rendered prompt from the upstream MCP gateway.
 
         Args:
             prompt: Gateway-backed prompt record from the catalog.
             arguments: Optional prompt-rendering arguments.
+            meta_data: Optional metadata dict forwarded as ``_meta`` in the upstream MCP request.
             user_identity: Effective requester email for session-pool isolation.
 
         Returns:
@@ -368,11 +369,10 @@ class PromptService(BaseService):
                     async with pool.session(
                         url=gateway_url,
                         headers=headers,
-                        transport_type=pool_transport_type,
+                        transport_type=registry_transport_type,
                         user_identity=pool_user_identity,
-                        gateway_id=gateway_id,
                     ) as pooled:
-                        remote_result = await pooled.session.get_prompt(remote_name, arguments=prompt_arguments)
+                        remote_result = await _get_prompt_with_meta(pooled.session, remote_name, prompt_arguments, meta_data)
                         return PromptResult(
                             messages=[
                                 Message.model_validate(message.model_dump(by_alias=True, exclude_none=True) if hasattr(message, "model_dump") else message)
@@ -2018,7 +2018,7 @@ class PromptService(BaseService):
                 if self._should_fetch_gateway_prompt(prompt):
                     # Release the read transaction before any remote network I/O.
                     db.commit()
-                    result = await self._fetch_gateway_prompt_result(prompt, arguments, user)
+                    result = await self._fetch_gateway_prompt_result(prompt, arguments, meta_data=_meta_data, user_identity=user)
                 elif not arguments:
                     result = PromptResult(
                         messages=[
@@ -2325,6 +2325,8 @@ class PromptService(BaseService):
                     target_team_id = prompt_update.team_id if prompt_update.team_id is not None else prompt.team_id
                     _validate_prompt_team_assignment(db, user_email, target_team_id)
                 prompt.visibility = prompt_update.visibility
+            if prompt_update.team_id is not None:
+                prompt.team_id = prompt_update.team_id
 
             # Update tags if provided
             if prompt_update.tags is not None:

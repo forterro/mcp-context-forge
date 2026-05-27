@@ -1992,8 +1992,7 @@ class ResourceService(BaseService):
                                         user_identity=pool_user_identity,
                                         gateway_id=gateway_id,
                                     ) as pooled:
-                                        # Note: MCP SDK 1.25.0 read_resource() does not support meta parameter
-                                        resource_response = await pooled.session.read_resource(uri=uri)
+                                        resource_response = await _read_resource_with_meta(pooled.session, uri, meta_data)
                                         return getattr(getattr(resource_response, "contents")[0], "text")
                                 else:
                                     # Fallback to per-call sessions when pool disabled or not initialized
@@ -2073,8 +2072,7 @@ class ResourceService(BaseService):
                                         user_identity=pool_user_identity,
                                         gateway_id=gateway_id,
                                     ) as pooled:
-                                        # Note: MCP SDK 1.25.0 read_resource() does not support meta parameter
-                                        resource_response = await pooled.session.read_resource(uri=uri)
+                                        resource_response = await _read_resource_with_meta(pooled.session, uri, meta_data)
                                         return getattr(getattr(resource_response, "contents")[0], "text")
                                 else:
                                     # Fallback to per-call sessions when pool disabled or not initialized
@@ -3028,6 +3026,10 @@ class ResourceService(BaseService):
                     target_team_id = resource_update.team_id if resource_update.team_id is not None else resource.team_id
                     _validate_resource_team_assignment(db, user_email, target_team_id)
                 resource.visibility = resource_update.visibility
+            if resource_update.team_id is not None:
+                resource.team_id = resource_update.team_id
+            if resource_update.owner_email is not None:
+                resource.owner_email = resource_update.owner_email
 
             # Update content if provided
             if resource_update.content is not None:
