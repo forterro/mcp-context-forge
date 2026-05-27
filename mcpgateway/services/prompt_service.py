@@ -372,8 +372,8 @@ class PromptService(BaseService):
                         headers=headers,
                         transport_type=registry_transport_type,
                         user_identity=pool_user_identity,
-                    ) as upstream:
-                        remote_result = await _get_prompt_with_meta(upstream.session, remote_name, prompt_arguments, meta_data)
+                    ) as pooled:
+                        remote_result = await _get_prompt_with_meta(pooled.session, remote_name, prompt_arguments, meta_data)
                         return PromptResult(
                             messages=[
                                 Message.model_validate(message.model_dump(by_alias=True, exclude_none=True) if hasattr(message, "model_dump") else message)
