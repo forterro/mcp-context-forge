@@ -664,7 +664,7 @@ async def oauth_callback(
 
         # Check for chained authorization flow (from /oauth/authorize-all)
         oauth_chain = request.cookies.get("oauth_chain") if request else None
-        if oauth_chain:
+        if oauth_chain and isinstance(oauth_chain, str):
             chain_ids = [gid.strip() for gid in oauth_chain.split(",") if gid.strip()]
             if chain_ids:
                 next_gw_id = chain_ids[0]
