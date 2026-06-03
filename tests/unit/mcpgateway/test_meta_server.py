@@ -324,8 +324,14 @@ class TestMetaToolDefinitions:
     """Tests for the META_TOOL_DEFINITIONS registry."""
 
     def test_all_six_tools_defined(self):
-        """Test that all six meta-tools are defined."""
-        expected = {"search_tools", "list_tools", "describe_tool", "execute_tool", "get_tool_categories", "get_similar_tools"}
+        """Test that all meta-tools are defined."""
+        expected = {
+            "search_tools", "list_tools", "describe_tool", "execute_tool",
+            "get_tool_categories", "get_similar_tools",
+            "list_resources", "read_resource",
+            "list_prompts", "get_prompt",
+            "authorize_gateway", "authorize_all_gateways",
+        }
         assert set(META_TOOL_DEFINITIONS.keys()) == expected
 
     def test_each_has_description(self):
@@ -704,6 +710,11 @@ def _mock_get_db_with_tools(tools):
         filter_mock = MagicMock()
         query.filter.return_value = filter_mock
         filter_mock.filter.return_value = filter_mock  # support chained .filter().filter()
+
+        # Support .options(...).filter(...) chain (used in _get_tool_metadata
+        # with joinedload). .options() returns a query-like object that also
+        # supports .filter() leading back to filter_mock.
+        query.options.return_value = query
 
         # .limit().all() for keyword search
         filter_mock.limit.return_value.all.return_value = tools
@@ -2245,15 +2256,14 @@ class TestMetaToolDefinitionsIncludeNewTools:
         assert "get_prompt" in META_TOOL_DEFINITIONS
 
     def test_total_meta_tools_is_11(self):
-        assert len(META_TOOL_DEFINITIONS) == 11
+        assert len(META_TOOL_DEFINITIONS) == 12
 
     def test_service_returns_11_definitions(self):
         service = MetaServerService()
         defs = service.get_meta_tool_definitions()
-        assert len(defs) == 11
+        assert len(defs) == 12
         names = {d["name"] for d in defs}
         assert "list_resources" in names
         assert "read_resource" in names
         assert "list_prompts" in names
         assert "get_prompt" in names
-        assert "tools" in result

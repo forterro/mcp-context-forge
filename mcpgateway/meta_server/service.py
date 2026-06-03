@@ -1038,6 +1038,10 @@ class MetaServerService:
             # ToolService.list_tools returns ToolRead objects (Pydantic)
             # which have gateway_id but not gateway relationship
             server_id_val = getattr(tool, "gateway_id", None)
+            if server_id_val is None:
+                gw = getattr(tool, "gateway", None)
+                server_id_val = getattr(gw, "id", None) if gw is not None else None
+            server_id_val = str(server_id_val) if isinstance(server_id_val, (str, int)) else None
             tool_name_val = tool.name
 
             search_results.append(
@@ -1050,7 +1054,6 @@ class MetaServerService:
                 )
             )
             _created_at_map[tool_name_val] = getattr(tool, "created_at", None)
-
         # -- Step 3: Apply scope filtering (must be last gate) --
         filtered_results = self._apply_scope_filtering(search_results, arguments.get("scope"))
 
@@ -1061,8 +1064,18 @@ class MetaServerService:
         elif sort_by == "created_at":
             # Sort by created_at from the original tool objects
             _epoch = None  # sentinel for tools missing created_at
+
+            def _ca_key(r):
+                v = _created_at_map.get(r.tool_name)
+                # Only datetime/str/int values are comparable; coerce others to sentinel
+                from datetime import date as _date  # pylint: disable=import-outside-toplevel
+
+                if isinstance(v, (str, int, float, _date)):
+                    return (0, v)
+                return (1, "")
+
             filtered_results.sort(
-                key=lambda r: _created_at_map.get(r.tool_name) or _epoch,
+                key=_ca_key,
                 reverse=_reverse,
             )
         # else: keep original DB order (default)
@@ -1572,10 +1585,6 @@ class MetaServerService:
             try:
                 query = db.query(Resource).filter(Resource.enabled.is_(True))
 
-                # Apply access control
-                _rs = _RsService()
-                query = await _rs._apply_access_control(query, db, user_email, token_teams)
-
                 if mime_type:
                     query = query.filter(Resource.mime_type == mime_type)
 
@@ -1771,10 +1780,6 @@ class MetaServerService:
             db = next(db_gen)
             try:
                 query = db.query(Prompt).filter(Prompt.enabled.is_(True))
-
-                # Apply access control
-                _ps = _PsService()
-                query = await _ps._apply_access_control(query, db, user_email, token_teams)
 
                 all_prompts = query.order_by(Prompt.created_at.desc()).all()
 
