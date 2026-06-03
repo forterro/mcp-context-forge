@@ -56,9 +56,12 @@ def _login_url_with_next(request: Request) -> str:
         Login URL with optional ?next= parameter.
     """
     login_url = f"{settings.app_root_path}/admin/login"
-    request_path = request.scope.get("path", "/")
+    try:
+        request_path = request.scope.get("path", "/")
+    except (AttributeError, TypeError):
+        request_path = "/"
     # Don't add ?next= for the login page itself (avoid redirect loops) or root paths
-    if request_path and request_path != "/" and not request_path.rstrip("/").endswith("/admin/login"):
+    if isinstance(request_path, str) and request_path and request_path != "/" and not request_path.rstrip("/").endswith("/admin/login"):
         login_url = f"{login_url}?next={quote(request_path, safe='')}"
     return login_url
 from mcpgateway.utils.verify_credentials import is_proxy_auth_trust_active
