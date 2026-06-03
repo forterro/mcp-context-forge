@@ -35,7 +35,8 @@ import uuid
 
 # Third-Party
 import httpx
-from mcp import ClientSession
+from mcp import ClientSession, types
+from mcp.types import ReadResourceRequest, ReadResourceRequestParams
 from mcp.client.sse import sse_client
 from mcp.client.streamable_http import streamablehttp_client
 import parse

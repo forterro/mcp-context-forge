@@ -1660,6 +1660,11 @@ async def call_tool(name: str, arguments: dict) -> Union[
     # First-Party
     from mcpgateway.auth_context import get_scoped_visibility_from_user_context  # pylint: disable=import-outside-toplevel
 
+    # Extract authorization parameters from user context (same pattern as list_tools)
+    user_email = user_context.get("email") if user_context else None
+    token_teams = user_context.get("teams") if user_context else None
+    is_admin = user_context.get("is_admin", False) if user_context else False
+
     # Preserve actual email for OAuth token lookup before admin bypass nulls it
     actual_user_email = user_email
 
