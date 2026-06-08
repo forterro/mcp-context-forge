@@ -2020,8 +2020,7 @@ class ResourceService(BaseService):
                                     ):
                                         async with ClientSession(read_stream, write_stream) as session:
                                             _ = await session.initialize()
-                                            # Note: MCP SDK 1.25.0 read_resource() does not support meta parameter
-                                            resource_response = await session.read_resource(uri=uri)
+                                            resource_response = await _read_resource_with_meta(session, uri, meta_data)
                                             return getattr(getattr(resource_response, "contents")[0], "text")
                             except Exception as e:
                                 # Sanitize error message to prevent URL secrets from leaking in logs
@@ -2101,8 +2100,7 @@ class ResourceService(BaseService):
                                     ):
                                         async with ClientSession(read_stream, write_stream) as session:
                                             _ = await session.initialize()
-                                            # Note: MCP SDK 1.25.0 read_resource() does not support meta parameter
-                                            resource_response = await session.read_resource(uri=uri)
+                                            resource_response = await _read_resource_with_meta(session, uri, meta_data)
                                             return getattr(getattr(resource_response, "contents")[0], "text")
                             except Exception as e:
                                 # Sanitize error message to prevent URL secrets from leaking in logs
