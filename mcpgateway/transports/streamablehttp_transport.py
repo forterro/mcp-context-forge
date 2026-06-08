@@ -1654,6 +1654,11 @@ async def call_tool(name: str, arguments: dict) -> Union[
     # First-Party
     from mcpgateway.auth_context import get_scoped_visibility_from_user_context  # pylint: disable=import-outside-toplevel
 
+    # Extract authorization parameters from user context (same pattern as list_tools)
+    user_email = user_context.get("email") if user_context else None
+    token_teams = user_context.get("teams") if user_context else None
+    is_admin = user_context.get("is_admin", False) if user_context else False
+
     # Preserve actual email for OAuth token lookup before admin bypass nulls it
     actual_user_email = user_email
 
@@ -1846,14 +1851,17 @@ async def call_tool(name: str, arguments: dict) -> Union[
 
     try:
         async with get_db() as db:
-            # Use tool service for all tool invocations (handles direct_proxy internally)
+            # Use tool service for all tool invocations (handles direct_proxy internally).
+            # Pass actual_user_email (not the RBAC-bypass-nulled user_email) so that
+            # per-user OAuth token lookup and downstream identity propagation keep
+            # working for admin sessions with unrestricted teams.
             result = await tool_service.invoke_tool(
                 db=db,
                 name=name,
                 arguments=arguments,
                 request_headers=request_headers,
                 app_user_email=app_user_email,
-                user_email=user_email,
+                user_email=actual_user_email,
                 token_teams=token_teams,
                 server_id=server_id,
                 meta_data=meta_data,
