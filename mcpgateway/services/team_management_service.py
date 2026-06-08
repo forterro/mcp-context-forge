@@ -1127,41 +1127,46 @@ class TeamManagementService:
             logger.error(f"Failed to get teams for user {SecurityValidator.sanitize_log_message(user_email)}: {e}")
             return []
 
-    async def verify_team_for_user(self, user_email: str, team_id: Optional[str] = None) -> Optional[str]:
+    async def verify_team_for_user(self, user_email: str, team_id: Optional[str] = None):
         """Verify and resolve a team ID for a user.
 
         If ``team_id`` is provided, validates that the user is a member of that
         team and returns it.  If not provided, returns the user's personal team
-        ID.
+        ID.  On DB errors or when the user is not a member of the requested
+        team, returns an empty list so callers can detect the failure without
+        raising.
 
         Args:
             user_email: The email of the user whose teams are being queried.
             team_id: Specific team ID to check for membership.
 
         Returns:
-            The verified team ID (``str``) or ``None`` when no personal team
-            exists and no ``team_id`` was requested.
-
-        Raises:
-            PermissionError: When *team_id* is provided but the user is not a
-                member of that team.
+            The verified team ID (``str``), ``None`` when no personal team
+            exists and no ``team_id`` was requested, or ``[]`` on DB error /
+            non-membership.
         """
         try:
-            query = self.db.query(EmailTeam).join(EmailTeamMember).filter(EmailTeamMember.user_email == user_email, EmailTeamMember.is_active.is_(True), EmailTeam.is_active.is_(True))
-            user_teams = query.all()
-            self.db.commit()  # Release transaction to avoid idle-in-transaction
+            try:
+                query = self.db.query(EmailTeam).join(EmailTeamMember).filter(EmailTeamMember.user_email == user_email, EmailTeamMember.is_active.is_(True), EmailTeam.is_active.is_(True))
+                user_teams = query.all()
+                self.db.commit()  # Release transaction to avoid idle-in-transaction
+            except Exception as e:
+                self.db.rollback()
+                logger.error(f"Failed to get teams for user {SecurityValidator.sanitize_log_message(user_email)}: {e}")
+                return []
+
+            if not team_id:
+                personal_team = next((t for t in user_teams if getattr(t, "is_personal", False)), None)
+                team_id = personal_team.id if personal_team else None
+            else:
+                is_team_present = any(team.id == team_id for team in user_teams)
+                if not is_team_present:
+                    return []
         except Exception as e:
             self.db.rollback()
-            logger.error(f"Failed to get teams for user {SecurityValidator.sanitize_log_message(user_email)}: {e}")
-            raise
-
-        if not team_id:
-            personal_team = next((t for t in user_teams if getattr(t, "is_personal", False)), None)
-            return personal_team.id if personal_team else None
-
-        is_team_present = any(team.id == team_id for team in user_teams)
-        if not is_team_present:
-            raise PermissionError(f"User is not a member of the requested team")
+            logger.error(f"Failed to verify team for user {SecurityValidator.sanitize_log_message(user_email)}: {e}")
+            if not team_id:
+                team_id = None
 
         return team_id
 
