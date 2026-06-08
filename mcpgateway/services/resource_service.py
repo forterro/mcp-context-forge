@@ -35,9 +35,10 @@ import uuid
 
 # Third-Party
 import httpx
-from mcp import ClientSession
+from mcp import ClientSession, types
 from mcp.client.sse import sse_client
 from mcp.client.streamable_http import streamablehttp_client
+from mcp.types import ReadResourceRequest, ReadResourceRequestParams
 import parse
 from pydantic import ValidationError
 from sqlalchemy import and_, delete, desc, not_, or_, select
@@ -46,7 +47,7 @@ from sqlalchemy.orm import joinedload, selectinload, Session
 
 # First-Party
 from mcpgateway.common.models import ResourceContent, ResourceContents, ResourceTemplate, TextContent
-from mcpgateway.common.validators import SecurityValidator
+from mcpgateway.common.validators import SecurityValidator, validate_meta_data as _validate_meta_data
 from mcpgateway.config import settings
 from mcpgateway.db import EmailTeam
 from mcpgateway.db import EmailTeamMember as DbEmailTeamMember
@@ -122,6 +123,40 @@ logger = logging_service.get_logger(__name__)
 structured_logger = get_structured_logger("resource_service")
 audit_trail = get_audit_trail_service()
 metrics_buffer = get_metrics_buffer_service()
+
+
+def _build_read_resource_request(uri: Any, meta_data: Dict[str, Any]) -> "types.ClientRequest":
+    """Build a ReadResource ClientRequest that carries ``_meta`` (CWE-20, CWE-284).
+
+    Args:
+        uri: The resource URI.
+        meta_data: Validated metadata dict to inject as ``_meta``.
+
+    Returns:
+        A :class:`types.ClientRequest` ready to be passed to ``session.send_request``.
+    """
+    _rp_dict = ReadResourceRequestParams(uri=uri).model_dump(by_alias=True)
+    _rp_dict["_meta"] = meta_data
+    return types.ClientRequest(ReadResourceRequest(params=ReadResourceRequestParams.model_validate(_rp_dict)))
+
+
+async def _read_resource_with_meta(session: "ClientSession", uri: Any, meta_data: Optional[Dict[str, Any]]) -> Any:
+    """Dispatch a ``read_resource`` call, injecting ``_meta`` when provided.
+
+    Args:
+        session: An active MCP :class:`ClientSession`.
+        uri: The resource URI to read.
+        meta_data: Optional validated metadata dict.
+
+    Returns:
+        The raw MCP result object.
+    """
+    if meta_data:
+        return await session.send_request(
+            _build_read_resource_request(uri, meta_data),
+            types.ReadResourceResult,
+        )
+    return await session.read_resource(uri=uri)
 
 
 class ResourceError(Exception):
@@ -1697,6 +1732,9 @@ class ResourceService(BaseService):
         'using template: /template'
 
         """
+        # CWE-400: validate _meta limits before any DB access or upstream call
+        _validate_meta_data(meta_data)
+
         uri = None
         if resource_uri and resource_template_uri:
             uri = resource_template_uri
@@ -1969,31 +2007,31 @@ class ResourceService(BaseService):
                             if authentication is None:
                                 authentication = {}
                             try:
-                                # Use session pool if enabled for 10-20x latency improvement
-                                use_pool = False
-                                pool = None
-                                if settings.mcpgateway_session_affinity_enabled:
+                                # #4205: Registry path is taken when the caller has a downstream
+                                # Mcp-Session-Id; upstream state is then bound 1:1 to that
+                                # downstream session and never shared across clients.
+                                downstream_session_id = _downstream_session_id_from_request()
+                                use_registry = bool(downstream_session_id) and bool(gateway_id)
+                                registry = None
+                                if use_registry:
                                     try:
-                                        pool = get_session_affinity()
-                                        use_pool = True
-                                    except RuntimeError:
-                                        # Pool not initialized (e.g., in tests), fall back to per-call sessions
-                                        pass
+                                        registry = get_upstream_session_registry()
+                                    except RegistryNotInitializedError:
+                                        use_registry = False
 
-                                if use_pool and pool is not None:
-                                    async with pool.session(
+                                if use_registry and registry is not None:
+                                    async with registry.acquire(
+                                        downstream_session_id=downstream_session_id,
+                                        gateway_id=gateway_id,
                                         url=server_url,
                                         headers=authentication,
                                         transport_type=TransportType.SSE,
                                         httpx_client_factory=_get_httpx_client_factory,
-                                        user_identity=pool_user_identity,
-                                        gateway_id=gateway_id,
-                                    ) as pooled:
-                                        # Note: MCP SDK 1.25.0 read_resource() does not support meta parameter
-                                        resource_response = await pooled.session.read_resource(uri=uri)
+                                    ) as upstream:
+                                        resource_response = await _read_resource_with_meta(upstream.session, uri, meta_data)
                                         return getattr(getattr(resource_response, "contents")[0], "text")
                                 else:
-                                    # Fallback to per-call sessions when pool disabled or not initialized
+                                    # Fallback: per-call session when no downstream session id is in scope.
                                     async with sse_client(url=server_url, headers=authentication, timeout=settings.health_check_timeout, httpx_client_factory=_get_httpx_client_factory) as (
                                         read_stream,
                                         write_stream,
@@ -2049,31 +2087,31 @@ class ResourceService(BaseService):
                             if authentication is None:
                                 authentication = {}
                             try:
-                                # Use session pool if enabled for 10-20x latency improvement
-                                use_pool = False
-                                pool = None
-                                if settings.mcpgateway_session_affinity_enabled:
+                                # #4205: Registry path is taken when the caller has a downstream
+                                # Mcp-Session-Id; upstream state is then bound 1:1 to that
+                                # downstream session and never shared across clients.
+                                downstream_session_id = _downstream_session_id_from_request()
+                                use_registry = bool(downstream_session_id) and bool(gateway_id)
+                                registry = None
+                                if use_registry:
                                     try:
-                                        pool = get_session_affinity()
-                                        use_pool = True
-                                    except RuntimeError:
-                                        # Pool not initialized (e.g., in tests), fall back to per-call sessions
-                                        pass
+                                        registry = get_upstream_session_registry()
+                                    except RegistryNotInitializedError:
+                                        use_registry = False
 
-                                if use_pool and pool is not None:
-                                    async with pool.session(
+                                if use_registry and registry is not None:
+                                    async with registry.acquire(
+                                        downstream_session_id=downstream_session_id,
+                                        gateway_id=gateway_id,
                                         url=server_url,
                                         headers=authentication,
                                         transport_type=TransportType.STREAMABLE_HTTP,
                                         httpx_client_factory=_get_httpx_client_factory,
-                                        user_identity=pool_user_identity,
-                                        gateway_id=gateway_id,
-                                    ) as pooled:
-                                        # Note: MCP SDK 1.25.0 read_resource() does not support meta parameter
-                                        resource_response = await pooled.session.read_resource(uri=uri)
+                                    ) as upstream:
+                                        resource_response = await _read_resource_with_meta(upstream.session, uri, meta_data)
                                         return getattr(getattr(resource_response, "contents")[0], "text")
                                 else:
-                                    # Fallback to per-call sessions when pool disabled or not initialized
+                                    # Fallback: per-call session when no downstream session id is in scope.
                                     async with streamablehttp_client(url=server_url, headers=authentication, timeout=settings.health_check_timeout, httpx_client_factory=_get_httpx_client_factory) as (
                                         read_stream,
                                         write_stream,
@@ -2204,6 +2242,9 @@ class ResourceService(BaseService):
             >>> result
             True
         """
+        # CWE-400: validate _meta limits before any DB access or upstream call
+        _validate_meta_data(meta_data)
+
         start_time = time.monotonic()
         success = False
         error_message = None
@@ -2388,8 +2429,7 @@ class ResourceService(BaseService):
                                 async with ClientSession(read_stream, write_stream) as session:
                                     await session.initialize()
 
-                                    # Note: MCP SDK read_resource() only accepts uri; _meta is not supported
-                                    result = await session.read_resource(uri=uri)
+                                    result = await _read_resource_with_meta(session, uri, meta_data)
 
                                     # Convert MCP result to MCP-compliant content models
                                     # result.contents is a list of TextResourceContents or BlobResourceContents
