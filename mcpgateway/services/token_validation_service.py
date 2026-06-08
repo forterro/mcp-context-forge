@@ -181,7 +181,7 @@ def _validate_audience(claims: Dict[str, Any], oauth_config: Dict[str, Any], gat
     # 3. api://{client_id} (Azure AD app ID URI convention)
     # 4. Resource IDs derived from {resource_id}/.default scope patterns
     #    (Azure AD issues tokens with aud={resource_id} for these scopes)
-    acceptable = {expected}
+    acceptable = set(expected_list)
     client_id = oauth_config.get("client_id")
     if client_id:
         acceptable.add(client_id)
@@ -192,7 +192,7 @@ def _validate_audience(claims: Dict[str, Any], oauth_config: Dict[str, Any], gat
     # Pattern 2: "api://{resource_id}/{permission}" — token aud = resource_id
     # In both cases Entra ID issues the token with aud set to the
     # resource application's client_id (a GUID), not the URI.
-    for scope in oauth_config.get("scopes", []):
+    for scope in (oauth_config.get("scopes") or []):
         if not isinstance(scope, str):
             continue
         if scope.endswith("/.default"):
