@@ -1186,6 +1186,8 @@ class TestGetSimilarToolsImplementation:
             filter_mock = MagicMock()
             query.filter.return_value = filter_mock
             filter_mock.filter.return_value = filter_mock
+            # _get_tool_metadata uses .options(joinedload(...)).filter(...).all()
+            query.options.return_value = query
             filter_mock.first.return_value = ref_tool
             filter_mock.all.return_value = [
                 _make_mock_tool("public_similar", visibility="public"),

@@ -40,6 +40,7 @@ class TestDescribeTool:
         mock_tool.output_schema = {"type": "object"}
         mock_tool.tags = ["test", "sample"]
         mock_tool.annotations = {"example": "data"}
+        mock_tool.gateway_id = None
         mock_tool.servers = [mock_server]
         
         # Mock the _resolve_tool method

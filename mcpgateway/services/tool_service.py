@@ -2653,6 +2653,9 @@ class ToolService(BaseService):
         requesting_user_email: Optional[str] = None,
         requesting_user_is_admin: bool = False,
         requesting_user_team_roles: Optional[Dict[str, str]] = None,
+        sort_by: Optional[str] = None,
+        sort_order: Optional[str] = None,
+        include_schema: Optional[bool] = None,
     ) -> Union[tuple[List[ToolRead], Optional[str]], Dict[str, Any]]:
         """
         Retrieve a list of registered tools from the database with pagination support.
