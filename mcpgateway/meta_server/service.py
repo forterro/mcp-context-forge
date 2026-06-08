@@ -349,23 +349,17 @@ class MetaServerService:
         # -- Step 2: Keyword fallback search --
         keyword_results = []
         try:
-            from mcpgateway.services.tool_service import ToolService as _KwToolService  # pylint: disable=import-outside-toplevel
-            _kw_ts = _KwToolService()
-
             db_gen = get_db()
             db = next(db_gen)
             try:
-                # Use ToolService.list_tools for consistent access control.
-                # Fetch ALL tools (limit=0) so keyword matching covers the
-                # full catalog; pagination is applied after scoring.
-                kw_result = await _kw_ts.list_tools(
-                    db=db,
-                    include_inactive=False,
-                    limit=0,
-                    user_email=user_email,
-                    token_teams=token_teams,
+                # Query enabled tools directly. Access control is enforced
+                # later by the scope-filtering gate; the keyword fallback
+                # only needs the candidate pool of tools to score.
+                kw_tools_list = (
+                    db.query(Tool)
+                    .filter(Tool.enabled.is_(True))
+                    .all()
                 )
-                kw_tools_list, _ = kw_result if isinstance(kw_result, tuple) else (kw_result, None)
 
                 query_lower = query.lower()
                 # Tokenize query: split on whitespace, hyphens, underscores
@@ -848,7 +842,7 @@ class MetaServerService:
 
                     # Inherit tags from parent gateway when the tool has none
                     if not tags_list and tool.gateway_id and tool.gateway:
-                        gw_tags = tool.gateway.tags or []
+                        gw_tags = getattr(tool.gateway, "tags", None) or []
                         if gw_tags and isinstance(gw_tags[0], dict):
                             tags_list = [t.get("id") or t.get("label") for t in gw_tags if isinstance(t, dict)]
                         elif gw_tags:
@@ -1002,6 +996,9 @@ class MetaServerService:
                     limit=query_limit,
                     user_email=user_email,
                     token_teams=token_teams,
+                    sort_by=sort_by,
+                    sort_order=sort_order,
+                    include_schema=include_schema,
                 )
 
                 # Extract tools from result (could be tuple or dict)
