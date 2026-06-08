@@ -65,6 +65,7 @@ from starlette.types import Receive, Scope, Send
 # First-Party
 from mcpgateway.cache.global_config_cache import global_config_cache
 from mcpgateway.common.models import LogLevel
+from mcpgateway.common.validators import validate_meta_data as _validate_meta_data
 from mcpgateway.config import settings
 from mcpgateway.db import Gateway as DbGateway
 from mcpgateway.db import Server as DbServer
@@ -1373,10 +1374,15 @@ async def _proxy_list_tools_to_gateway(gateway: Any, request_headers: dict, user
         List of Tool objects from remote server
     """
     try:
-        # Prepare headers with per-user credentials (falls back to gateway defaults)
+        # Prepare headers with per-user credentials (falls back to gateway defaults).
+        # Skip the SessionLocal lookup when no user_email is provided so DB errors
+        # do not break gateways that rely solely on explicit passthrough headers.
         user_email = user_context.get("email") if user_context else None
-        with SessionLocal() as db:
-            headers = await resolve_gateway_auth_headers(gateway, app_user_email=user_email, db=db)
+        if user_email:
+            with SessionLocal() as db:
+                headers = await resolve_gateway_auth_headers(gateway, app_user_email=user_email, db=db)
+        else:
+            headers = await resolve_gateway_auth_headers(gateway, app_user_email=None, db=None)
 
         # Forward passthrough headers using shared utility (includes X-Upstream-Authorization rename)
         if request_headers:
@@ -1432,10 +1438,15 @@ async def _proxy_list_resources_to_gateway(gateway: Any, request_headers: dict, 
         List of Resource objects from remote server
     """
     try:
-        # Prepare headers with per-user credentials (falls back to gateway defaults)
+        # Prepare headers with per-user credentials (falls back to gateway defaults).
+        # Skip the SessionLocal lookup when no user_email is provided so DB errors
+        # do not break gateways that rely solely on explicit passthrough headers.
         user_email = user_context.get("email") if user_context else None
-        with SessionLocal() as db:
-            headers = await resolve_gateway_auth_headers(gateway, app_user_email=user_email, db=db)
+        if user_email:
+            with SessionLocal() as db:
+                headers = await resolve_gateway_auth_headers(gateway, app_user_email=user_email, db=db)
+        else:
+            headers = await resolve_gateway_auth_headers(gateway, app_user_email=None, db=None)
 
         # Forward passthrough headers using shared utility (includes X-Upstream-Authorization rename)
         if request_headers:
@@ -1497,10 +1508,15 @@ async def _proxy_read_resource_to_gateway(gateway: Any, resource_uri: str, user_
         List of content objects (TextResourceContents or BlobResourceContents) from remote server
     """
     try:
-        # Prepare headers with per-user credentials (falls back to gateway defaults)
+        # Prepare headers with per-user credentials (falls back to gateway defaults).
+        # Skip the SessionLocal lookup when no user_email is provided so DB errors
+        # do not break gateways that rely solely on explicit passthrough headers.
         user_email = user_context.get("email") if user_context else None
-        with SessionLocal() as db:
-            headers = await resolve_gateway_auth_headers(gateway, app_user_email=user_email, db=db)
+        if user_email:
+            with SessionLocal() as db:
+                headers = await resolve_gateway_auth_headers(gateway, app_user_email=user_email, db=db)
+        else:
+            headers = await resolve_gateway_auth_headers(gateway, app_user_email=None, db=None)
 
         # Get request headers
         request_headers = request_headers_var.get()
