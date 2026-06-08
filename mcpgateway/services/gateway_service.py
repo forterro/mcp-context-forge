@@ -1184,7 +1184,7 @@ class GatewayService(BaseService):  # pylint: disable=too-many-instance-attribut
                 oauth_config = None
 
             # Apply tool include/exclude filters (fnmatch glob patterns)
-            tools = _apply_tool_filters(tools, gateway.tools_include, gateway.tools_exclude)
+            tools = _apply_tool_filters(tools, getattr(gateway, "tools_include", None), getattr(gateway, "tools_exclude", None))
 
             # DbTool.auth_value is Mapped[Optional[str]] (Text), so encode the dict before
             # storing it there. DbGateway.auth_value is Mapped[Optional[Dict]] (JSON) and
@@ -1433,8 +1433,8 @@ class GatewayService(BaseService):  # pylint: disable=too-many-instance-attribut
                 # Gateway mode configuration
                 gateway_mode=gateway_mode,
                 # Tool filtering
-                tools_include=gateway.tools_include,
-                tools_exclude=gateway.tools_exclude,
+                tools_include=getattr(gateway, "tools_include", None),
+                tools_exclude=getattr(gateway, "tools_exclude", None),
             )
 
             # Add to DB and commit immediately so tools/resources/prompts are visible
@@ -2508,8 +2508,10 @@ class GatewayService(BaseService):  # pylint: disable=too-many-instance-attribut
 
                     # Apply NEW tool filters so this edit takes effect immediately
                     # (must read from gateway_update BEFORE persisting to gateway)
-                    effective_include = gateway_update.tools_include if gateway_update.tools_include is not None else gateway.tools_include
-                    effective_exclude = gateway_update.tools_exclude if gateway_update.tools_exclude is not None else gateway.tools_exclude
+                    _upd_inc = getattr(gateway_update, "tools_include", None)
+                    _upd_exc = getattr(gateway_update, "tools_exclude", None)
+                    effective_include = _upd_inc if _upd_inc is not None else getattr(gateway, "tools_include", None)
+                    effective_exclude = _upd_exc if _upd_exc is not None else getattr(gateway, "tools_exclude", None)
                     tools = _apply_tool_filters(tools, effective_include, effective_exclude)
 
                     new_tool_names = [tool.name for tool in tools]
@@ -3103,7 +3105,7 @@ class GatewayService(BaseService):  # pylint: disable=too-many-instance-attribut
                         )
 
                         # Apply tool include/exclude filters (fnmatch glob patterns)
-                        tools = _apply_tool_filters(tools, gateway.tools_include, gateway.tools_exclude)
+                        tools = _apply_tool_filters(tools, getattr(gateway, "tools_include", None), getattr(gateway, "tools_exclude", None))
 
                         new_tool_names = [tool.name for tool in tools]
                         new_resource_uris = [resource.uri for resource in resources]
