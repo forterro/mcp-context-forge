@@ -1873,14 +1873,17 @@ async def call_tool(name: str, arguments: dict) -> Union[
 
     try:
         async with get_db() as db:
-            # Use tool service for all tool invocations (handles direct_proxy internally)
+            # Use tool service for all tool invocations (handles direct_proxy internally).
+            # Pass actual_user_email (not the RBAC-bypass-nulled user_email) so that
+            # per-user OAuth token lookup and downstream identity propagation keep
+            # working for admin sessions with unrestricted teams.
             result = await tool_service.invoke_tool(
                 db=db,
                 name=name,
                 arguments=arguments,
                 request_headers=request_headers,
                 app_user_email=app_user_email,
-                user_email=user_email,
+                user_email=actual_user_email,
                 token_teams=token_teams,
                 server_id=server_id,
                 meta_data=meta_data,
