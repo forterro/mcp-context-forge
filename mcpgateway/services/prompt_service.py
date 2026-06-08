@@ -40,6 +40,7 @@ from sqlalchemy.orm import joinedload, selectinload, Session
 
 # First-Party
 from mcpgateway.common.models import Message, PromptResult, Role, TextContent
+from mcpgateway.common.validators import validate_meta_data as _validate_meta_data
 from mcpgateway.config import settings
 from mcpgateway.db import EmailTeam
 from mcpgateway.db import EmailTeamMember as DbEmailTeamMember
@@ -60,11 +61,10 @@ from mcpgateway.services.observability_service import current_trace_id, Observab
 from mcpgateway.services.structured_logger import get_structured_logger
 from mcpgateway.services.team_management_service import TeamManagementService
 from mcpgateway.services.upstream_session_registry import downstream_session_id_from_request_context as _downstream_session_id_from_request
-from mcpgateway.services.session_affinity import get_session_affinity
 from mcpgateway.services.upstream_session_registry import get_upstream_session_registry, RegistryNotInitializedError, TransportType
 from mcpgateway.utils.admin_check import is_admin_bypass_granted, is_user_admin
 from mcpgateway.utils.create_slug import slugify
-from mcpgateway.utils.gateway_access import build_gateway_access_filter, build_gateway_auth_headers, resolve_gateway_auth_headers
+from mcpgateway.utils.gateway_access import build_gateway_auth_headers, resolve_gateway_auth_headers
 from mcpgateway.utils.metrics_common import build_top_performers
 from mcpgateway.utils.pagination import unified_paginate
 from mcpgateway.utils.services_auth import decode_auth
@@ -417,27 +417,32 @@ class PromptService(BaseService):
                 gateway_url = apply_query_param_auth(gateway_url, auth_query_params_decrypted)
 
         remote_name = getattr(prompt, "original_name", None) or prompt.name
-        pool_user_identity = (user_identity or "anonymous").strip() or "anonymous"
         gateway_id = str(getattr(gateway, "id", ""))
         transport = str(getattr(gateway, "transport", "streamable_http") or "streamable_http").lower()
-        pool_transport_type = TransportType.SSE if transport == "sse" else TransportType.STREAMABLE_HTTP
+        registry_transport_type = TransportType.SSE if transport == "sse" else TransportType.STREAMABLE_HTTP
         prompt_arguments = arguments or None
+        # CWE-400: Validate meta_data limits before forwarding to upstream
+        _validate_meta_data(meta_data)
 
         try:
-            if settings.mcpgateway_session_affinity_enabled:
+            # #4205: Use the upstream session registry when a downstream Mcp-Session-Id
+            # is in scope; this binds the upstream session 1:1 to the downstream
+            # session and preserves connection reuse across its tool/prompt calls.
+            downstream_session_id = _downstream_session_id_from_request()
+            if downstream_session_id and gateway_id:
                 try:
-                    pool = get_session_affinity()
-                except RuntimeError:
-                    pool = None
-                if pool is not None:
-                    async with pool.session(
+                    registry = get_upstream_session_registry()
+                except RegistryNotInitializedError:
+                    registry = None
+                if registry is not None:
+                    async with registry.acquire(
+                        downstream_session_id=downstream_session_id,
+                        gateway_id=gateway_id,
                         url=gateway_url,
                         headers=headers,
-                        transport_type=pool_transport_type,
-                        user_identity=pool_user_identity,
-                        gateway_id=gateway_id,
-                    ) as pooled:
-                        remote_result = await _get_prompt_with_meta(pooled.session, remote_name, prompt_arguments, meta_data)
+                        transport_type=registry_transport_type,
+                    ) as upstream:
+                        remote_result = await _get_prompt_with_meta(upstream.session, remote_name, prompt_arguments, meta_data)
                         return PromptResult(
                             messages=[
                                 Message.model_validate(message.model_dump(by_alias=True, exclude_none=True) if hasattr(message, "model_dump") else message)
@@ -450,12 +455,12 @@ class PromptService(BaseService):
                 async with sse_client(url=gateway_url, headers=headers, timeout=settings.health_check_timeout) as streams:
                     async with ClientSession(*streams) as session:
                         await session.initialize()
-                        remote_result = await session.get_prompt(remote_name, arguments=prompt_arguments)
+                        remote_result = await _get_prompt_with_meta(session, remote_name, prompt_arguments, meta_data)
             else:
                 async with streamablehttp_client(url=gateway_url, headers=headers, timeout=settings.health_check_timeout) as (read_stream, write_stream, _get_session_id):
                     async with ClientSession(read_stream, write_stream) as session:
                         await session.initialize()
-                        remote_result = await session.get_prompt(remote_name, arguments=prompt_arguments)
+                        remote_result = await _get_prompt_with_meta(session, remote_name, prompt_arguments, meta_data)
 
             return PromptResult(
                 messages=[
@@ -1734,9 +1739,6 @@ class PromptService(BaseService):
                 if team_ids:
                     access_conditions.append(and_(DbPrompt.team_id.in_(team_ids), DbPrompt.visibility.in_(["team", "public"])))
                 query = query.where(or_(*access_conditions))
-
-                # Gateway-level access control
-                query = query.where(build_gateway_access_filter(DbPrompt.gateway_id, user_email, team_ids, is_public_only_token))
 
             # Cursor-based pagination logic can be implemented here in the future.
             logger.debug(cursor)
