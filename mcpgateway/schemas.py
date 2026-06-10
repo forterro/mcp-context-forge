@@ -2944,6 +2944,26 @@ class GatewayCreate(BaseModelWithConfigDict):
         """
         return v if v is not None else "cache"
 
+    @field_validator("auth_query_param_key", mode="before")
+    @classmethod
+    def empty_auth_query_param_key_to_none(cls, v: Optional[str]) -> Optional[str]:
+        """Coerce an empty or whitespace-only query-param key to None.
+
+        The Admin UI gateway form always submits the ``auth_query_param_key``
+        input, even when query-parameter auth is not selected, so it arrives as
+        an empty string. Without this coercion the empty value is validated
+        against the field pattern and rejected with a 422 error.
+
+        Args:
+            v: Raw query-parameter key value (may be None or empty).
+
+        Returns:
+            The trimmed key, or None when empty/whitespace-only.
+        """
+        if isinstance(v, str) and not v.strip():
+            return None
+        return v
+
     @field_validator("tags")
     @classmethod
     def validate_tags(cls, v: Optional[List[str]]) -> List[str]:
@@ -3326,6 +3346,26 @@ class GatewayUpdate(BaseModelWithConfigDict):
 
     # Per-gateway identity propagation configuration
     identity_propagation: Optional[Dict[str, Any]] = Field(None, description="Per-gateway identity propagation config: {enabled, mode, headers_prefix, sign_claims, allowed_attributes}")
+
+    @field_validator("auth_query_param_key", mode="before")
+    @classmethod
+    def empty_auth_query_param_key_to_none(cls, v: Optional[str]) -> Optional[str]:
+        """Coerce an empty or whitespace-only query-param key to None.
+
+        The Admin UI gateway form always submits the ``auth_query_param_key``
+        input, even when query-parameter auth is not selected, so it arrives as
+        an empty string. Without this coercion the empty value is validated
+        against the field pattern and rejected with a 422 error.
+
+        Args:
+            v: Raw query-parameter key value (may be None or empty).
+
+        Returns:
+            The trimmed key, or None when empty/whitespace-only.
+        """
+        if isinstance(v, str) and not v.strip():
+            return None
+        return v
 
     @field_validator("tags")
     @classmethod
