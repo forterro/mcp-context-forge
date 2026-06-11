@@ -82,6 +82,19 @@ mcpContextForge:
     maxReplicas: 10                         # Never scale above this
     targetCPUUtilizationPercentage: 90      # Scale up when avg CPU > 90 % of *request*
     targetMemoryUtilizationPercentage: 90   # Scale up when avg memory > 90 % of *request*
+    behavior:
+      scaleDown:
+        stabilizationWindowSeconds: 600
+        policies:
+          - type: Percent
+            value: 25
+            periodSeconds: 120
+      scaleUp:
+        stabilizationWindowSeconds: 60
+        policies:
+          - type: Pods
+            value: 2
+            periodSeconds: 60
 
   image:
     repository: ghcr.io/ibm/mcp-context-forge
@@ -150,7 +163,7 @@ mcpContextForge:
       memory: 2Gi
     requests:
       cpu: 500m
-      memory: 768Mi
+      memory: 1Gi
   # Pod security context - controls UID/GID for the container
   # Default values align with the container image (UID 10001, GID 10001)
   podSecurityContext:
