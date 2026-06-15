@@ -16,8 +16,15 @@ revision: str = "ed013636438d"
 # upstream head ``0a089912b5f0`` (add_numeric_id_to_email_users). This keeps the
 # old merge revision reachable so databases stamped on ``e7507e86bc63`` upgrade
 # cleanly, while the three forterro feature heads remain consumed by
-# ``e7507e86bc63``. A fresh database still resolves to a single head here.
-down_revision: Union[str, Sequence[str], None] = ("e7507e86bc63", "0a089912b5f0")
+# ``e7507e86bc63``. We also descend from the RC4 integration merge
+# ``664ce26d3339`` so production databases stamped on that revision (image
+# ``1.0.0-RC4-forterro-72``) upgrade cleanly instead of orphaning. A fresh
+# database still resolves to a single head here.
+down_revision: Union[str, Sequence[str], None] = (
+    "e7507e86bc63",
+    "0a089912b5f0",
+    "664ce26d3339",
+)
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
