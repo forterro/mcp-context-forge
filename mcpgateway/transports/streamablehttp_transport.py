@@ -70,6 +70,7 @@ from mcpgateway.config import settings
 from mcpgateway.db import Gateway as DbGateway
 from mcpgateway.db import Server as DbServer
 from mcpgateway.db import SessionLocal
+from mcpgateway.meta_server.service import get_meta_server_service
 from mcpgateway.middleware.rbac import _ACCESS_DENIED_MSG
 from mcpgateway.observability import create_span
 from mcpgateway.services.completion_service import CompletionService
@@ -301,6 +302,10 @@ def _resolve_authorization_servers(oauth_config: Dict[str, Any]) -> List[str]:
         return [url]
     return []
 
+
+# Meta-server context: stores server_type for the current request
+server_type_var: contextvars.ContextVar[str] = contextvars.ContextVar("server_type", default="standard")
+hide_underlying_tools_var: contextvars.ContextVar[bool] = contextvars.ContextVar("hide_underlying_tools", default=True)
 
 _shared_session_registry: Optional[Any] = None
 _rust_event_store_client: Optional[httpx.AsyncClient] = None
@@ -1670,10 +1675,22 @@ async def call_tool(name: str, arguments: dict) -> Union[
         logger.debug("No active request context found")
 
     # First-Party
-    from mcpgateway.auth_context import get_scoped_visibility_from_user_context  # pylint: disable=import-outside-toplevel
 
-    # Extract Layer-1 visibility filter from user context
-    user_email, token_teams = get_scoped_visibility_from_user_context(user_context)
+    # Extract authorization parameters from user context (same pattern as list_tools)
+    user_email = user_context.get("email") if user_context else None
+    token_teams = user_context.get("teams") if user_context else None
+    is_admin = user_context.get("is_admin", False) if user_context else False
+
+    # Preserve actual email for OAuth token lookup before admin bypass nulls it
+    actual_user_email = user_email
+
+    # Admin bypass - only when token has NO team restrictions (token_teams is None)
+    # If token has explicit team scope (even empty [] for public-only), respect it
+    if is_admin and token_teams is None:
+        user_email = None
+        # token_teams stays None (unrestricted)
+    elif token_teams is None:
+        token_teams = []  # Non-admin without teams = public-only (secure default)
 
     # Enforce per-server OAuth requirement in permissive mode (defense-in-depth).
     # When mcp_require_auth=True, the middleware already guarantees authentication.
@@ -1698,6 +1715,20 @@ async def call_tool(name: str, arguments: dict) -> Union[
         )
         if not has_execute_permission:
             raise PermissionError(_ACCESS_DENIED_MSG)
+
+    # Check if this is a meta-tool call on a meta-server
+    current_server_type = server_type_var.get()
+    meta_service = get_meta_server_service()
+    if meta_service.is_meta_server(current_server_type) and meta_service.is_meta_tool(name):
+        # Dispatch to meta-tool stub handler
+        # Use actual_user_email (not RBAC-filtered user_email) so OAuth token lookup works
+        result_data = await meta_service.handle_meta_tool_call(
+            name, arguments,
+            user_email=actual_user_email,
+            token_teams=token_teams,
+            request_headers=request_headers,
+        )
+        return [types.TextContent(type="text", text=orjson.dumps(result_data).decode())]
 
     # Check if we're in direct_proxy mode by looking for X-Context-Forge-Gateway-Id header
     gateway_id_from_header = extract_gateway_id_from_headers(request_headers)
@@ -1842,14 +1873,17 @@ async def call_tool(name: str, arguments: dict) -> Union[
 
     try:
         async with get_db() as db:
-            # Use tool service for all tool invocations (handles direct_proxy internally)
+            # Use tool service for all tool invocations (handles direct_proxy internally).
+            # Pass actual_user_email (not the RBAC-bypass-nulled user_email) so that
+            # per-user OAuth token lookup and downstream identity propagation keep
+            # working for admin sessions with unrestricted teams.
             result = await tool_service.invoke_tool(
                 db=db,
                 name=name,
                 arguments=arguments,
                 request_headers=request_headers,
                 app_user_email=app_user_email,
-                user_email=user_email,
+                user_email=actual_user_email,
                 token_teams=token_teams,
                 server_id=server_id,
                 meta_data=meta_data,
@@ -2237,6 +2271,15 @@ async def list_tools() -> List[types.Tool]:
     # logged by the ASGI server.
     if not settings.mcp_require_auth:
         await _check_server_oauth_enforcement(server_id, user_context)
+
+    # Check if this is a meta-server that should expose meta-tools instead
+    current_server_type = server_type_var.get()
+    current_hide_underlying = hide_underlying_tools_var.get()
+    meta_service = get_meta_server_service()
+    if meta_service.should_hide_underlying_tools(current_server_type, current_hide_underlying):
+        # Return meta-tools instead of underlying real tools
+        meta_tool_defs = meta_service.get_meta_tool_definitions()
+        return [types.Tool(name=td["name"], description=td["description"], inputSchema=td["inputSchema"]) for td in meta_tool_defs]
 
     if server_id:
         try:
@@ -4413,6 +4456,21 @@ class SessionManagerWrapper:
         request_headers_var.set(enriched_headers)
 
         server_id_var.set(validated)
+
+        # Load server metadata for meta-server tool hiding
+        if validated:
+            try:
+                from mcpgateway.db import Server as DbServer  # pylint: disable=import-outside-toplevel
+                db = SessionLocal()
+                try:
+                    srv = db.query(DbServer).filter(DbServer.id == validated).first()
+                    if srv:
+                        server_type_var.set(getattr(srv, "server_type", "standard") or "standard")
+                        hide_underlying_tools_var.set(getattr(srv, "hide_underlying_tools", True))
+                finally:
+                    db.close()
+            except Exception as e:
+                logger.debug("Failed to load server metadata for meta-server: %s", e)
 
         # For session affinity: wrap send to capture session ID from response headers
         # This allows us to register ownership for new sessions created by the SDK
