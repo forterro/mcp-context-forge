@@ -2807,10 +2807,6 @@ class GatewayService(BaseService):  # pylint: disable=too-many-instance-attribut
                     effective_exclude = _upd_exc if _upd_exc is not None else getattr(gateway, "tools_exclude", None)
                     tools = _apply_tool_filters(tools, effective_include, effective_exclude)
 
-                    new_tool_names = [tool.name for tool in tools]
-                    new_resource_uris = [resource.uri for resource in resources]
-                    new_prompt_names = [prompt.name for prompt in prompts]
-
                     if gateway_update.one_time_auth:
                         # For one-time auth, clear auth_type and auth_value after initialization
                         gateway.auth_type = "one_time_auth"
