@@ -414,6 +414,16 @@ def get_rpc_filter_context(request: Request, user) -> tuple[Optional[str], Optio
         if payload:
             is_admin = payload.get("is_admin", False) or payload.get("user", {}).get("is_admin", False)
 
+            # SECURITY: Session tokens (token_use == "session") do not carry an
+            # is_admin claim. For these tokens the database is the authority and
+            # admin bypass is encoded as token_teams=None by resolve_session_teams(),
+            # which returns None ONLY for DB-admin users (non-admins always get a
+            # concrete team list, possibly empty). Honor that DB-authority signal
+            # here; otherwise an admin's UI session would silently collapse to
+            # public-only visibility and lose access to team/private resources.
+            if not is_admin and payload.get("token_use") == "session" and token_teams is None:
+                is_admin = True
+
     if token_teams is not None and len(token_teams) == 0:
         is_admin = False
 
