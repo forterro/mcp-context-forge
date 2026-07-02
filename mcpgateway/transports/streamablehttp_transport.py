@@ -40,7 +40,7 @@ from enum import Enum
 import re
 from typing import Any, assert_never, AsyncGenerator, ContextManager, Dict, List, Optional, Pattern, Tuple, Union
 from urllib.parse import urlsplit, urlunsplit
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 # Third-Party
 import anyio
@@ -5070,6 +5070,26 @@ class _StreamableHttpAuthHandler:
             nested_is_admin = nested_user.get("is_admin", False) if isinstance(nested_user, dict) else False
             is_admin = user_payload.get("is_admin", False) or nested_is_admin
             token_use = user_payload.get("token_use")
+
+            # Session tokens carry the user's UUID as ``sub`` (upstream #4816 "JWT Cleanup").
+            # verify_credentials() resolves that UUID back to an email for REST consumers, but
+            # this Streamable HTTP MCP path was never updated to do the same. Without the
+            # resolution the UUID is treated as the email, the DB user lookup below fails, the
+            # caller collapses to an unknown public-only principal, and the 1.0.4 per-method
+            # RBAC enforcement then denies the request with 403 "Access denied".
+            if user_email and token_use == "session":
+                try:
+                    UUID(user_email)
+                except ValueError:
+                    pass  # sub is already an email/username, not a UUID
+                else:
+                    # First-Party
+                    from mcpgateway.auth import _get_email_by_id_sync  # pylint: disable=import-outside-toplevel
+
+                    resolved_email = await asyncio.to_thread(_get_email_by_id_sync, user_email)
+                    if resolved_email:
+                        user_email = resolved_email
+
             db_user_is_admin = False
             user_record = None
             auth_cache = get_auth_cache() if settings.auth_cache_enabled else None
