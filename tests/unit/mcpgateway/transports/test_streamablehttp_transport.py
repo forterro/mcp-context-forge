@@ -5179,6 +5179,80 @@ async def test_streamable_http_auth_proxy_user_context_on_valid_jwt(monkeypatch)
 
 
 # ---------------------------------------------------------------------------
+# streamable_http_auth: session-token UUID `sub` resolves to email (upstream #4816)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_streamable_http_auth_session_token_uuid_sub_resolves_to_email(monkeypatch):
+    """Session tokens carry the user's UUID as ``sub``; the MCP transport must
+    resolve it to the DB email, mirroring verify_credentials.
+
+    Regression: after the 1.0.4 per-method RBAC hardening, SSO/session tokens
+    (``sub`` = UUID) were treated as an unknown public-only principal on the
+    Streamable HTTP path, causing 403 "Access denied" for every SSO MCP client.
+    """
+    uuid_sub = "550e8400-e29b-41d4-a716-446655440000"
+    resolved_email = "olivier.gintrand@example.com"
+
+    async def fake_verify(token):
+        return {
+            "sub": uuid_sub,
+            "token_use": "session",
+            "jti": None,
+            "scopes": {"server_id": None, "permissions": ["*"]},
+        }
+
+    monkeypatch.setattr(tr, "verify_credentials", fake_verify)
+    # Force the individual-lookup fallback path (no cache, no batch).
+    monkeypatch.setattr(tr.settings, "auth_cache_enabled", False)
+    monkeypatch.setattr(tr.settings, "auth_cache_batch_queries", False)
+    monkeypatch.setattr(tr.settings, "require_user_in_db", False)
+
+    admin_user = Mock()
+    admin_user.is_admin = True
+    admin_user.is_active = True
+    admin_user.email = resolved_email
+
+    id_lookups: list[str] = []
+
+    def fake_email_by_id(user_id):
+        id_lookups.append(user_id)
+        return resolved_email
+
+    def fake_user_by_email(email):
+        # The UUID must NOT match any user; only the resolved email does.
+        return admin_user if email == resolved_email else None
+
+    scope = _make_scope("/servers/1/mcp", headers=[(b"authorization", b"Bearer session-token")])
+    sent = []
+
+    async def send(msg):
+        sent.append(msg)
+
+    with (
+        patch("mcpgateway.auth._get_email_by_id_sync", side_effect=fake_email_by_id),
+        patch("mcpgateway.auth._get_user_by_email_sync", side_effect=fake_user_by_email),
+        patch("mcpgateway.auth._check_token_revoked_sync", return_value=False),
+        patch("mcpgateway.auth.resolve_session_teams", new_callable=AsyncMock, return_value=None),
+        patch("mcpgateway.auth.resolve_trace_team_name", new_callable=AsyncMock, return_value=None),
+    ):
+        result = await streamable_http_auth(scope, None, send)
+
+    assert result is True
+    assert sent == []  # no error response
+
+    # The UUID `sub` was resolved to an email via _get_email_by_id_sync ...
+    assert id_lookups == [uuid_sub]
+
+    # ... and the resulting context carries the resolved email with admin bypass,
+    # so the 1.0.4 per-method RBAC gate grants tools.execute instead of 403.
+    user_ctx = tr.user_context_var.get()
+    assert user_ctx["email"] == resolved_email
+    assert user_ctx["is_admin"] is True
+
+
+# ---------------------------------------------------------------------------
 # streamable_http_auth: positive team membership cache
 # ---------------------------------------------------------------------------
 
@@ -16973,6 +17047,7 @@ async def test_normalize_jwt_payload_non_admin_without_db_record():
 
 
 def test_get_scoped_visibility_from_user_context_admin_missing_teams_key():
+    # First-Party
     from mcpgateway.auth_context import get_scoped_visibility_from_user_context
 
     user_email, token_teams = get_scoped_visibility_from_user_context({"email": "admin@x.com", "is_admin": True})
@@ -16982,6 +17057,7 @@ def test_get_scoped_visibility_from_user_context_admin_missing_teams_key():
 
 
 def test_get_scoped_visibility_from_user_context_admin_with_empty_teams():
+    # First-Party
     from mcpgateway.auth_context import get_scoped_visibility_from_user_context
 
     user_email, token_teams = get_scoped_visibility_from_user_context({"email": "admin@x.com", "is_admin": True, "teams": []})
@@ -16991,6 +17067,7 @@ def test_get_scoped_visibility_from_user_context_admin_with_empty_teams():
 
 
 def test_get_scoped_visibility_from_user_context_admin_with_team_scope():
+    # First-Party
     from mcpgateway.auth_context import get_scoped_visibility_from_user_context
 
     user_email, token_teams = get_scoped_visibility_from_user_context({"email": "admin@x.com", "is_admin": True, "teams": ["team1"]})
